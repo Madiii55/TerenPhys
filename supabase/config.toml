@@ -1,0 +1,12 @@
+project_id = "terenphys"
+
+# Telegram does not send a Supabase JWT. telegram-sync validates the Telegram secret header first.
+[functions.telegram-sync]
+verify_jwt = false
+
+# Closed by default; an expiring, server-side digest is enabled only for an authorized import/setup.
+[functions.telegram-import]
+verify_jwt = false
+
+[functions.telegram-setup]
+verify_jwt = false

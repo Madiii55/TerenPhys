@@ -1,0 +1,22 @@
+.learning-resources { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; padding-top:6px; }
+.learning-resource { display:flex; flex-direction:column; align-items:flex-start; min-width:0; min-height:208px; padding:22px 0; border-block:1px solid var(--learning-rule); }
+.learning-resource-number { color:var(--learning-muted); font-size:10px; font-variant-numeric:tabular-nums; letter-spacing:.12em; }
+.learning-resource h2 { font:400 37px/1.1 'Cormorant Garamond',Georgia,serif; margin:22px 0 14px; }
+.learning-resource-meta { margin:0 0 24px; color:var(--learning-muted); font-size:11px; }
+.learning-resource-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px 24px; margin-top:auto; }
+.learning-resource-actions button { display:inline-flex; align-items:center; gap:10px; color:var(--learning-accent); padding:8px 0; font-size:12px; }
+.learning-resource-actions button:hover { color:#fff; }
+.learning-quarter-trial { margin-top:28px; border-block:1px solid var(--learning-rule); }
+.learning-quarter-trial button { display:flex; width:100%; align-items:center; justify-content:space-between; gap:16px; text-align:left; padding:22px 0; color:var(--learning-ink); }
+.learning-quarter-trial button span { font:400 30px/1.2 'Cormorant Garamond',Georgia,serif; }
+.learning-quarter-trial button:not(:disabled):hover { color:var(--learning-accent); }
+.learning-quarter-trial button:disabled { cursor:default; color:var(--learning-muted); }
+.learning-quarter-trial small { color:var(--learning-muted); font-size:10px; }
+.study-resource-content--image { display:block; padding:20px; text-align:center; background:#e9e8e4; }
+.study-resource-content--image > img { display:block; margin:0 auto; width:min(100%,950px); max-width:100%; max-height:none; height:auto; background:white; }
+@media(max-width:600px) {
+  .learning-resources { grid-template-columns:minmax(0,1fr); gap:22px; }
+  .learning-resource { min-height:180px; }
+  .learning-resource h2 { margin-top:16px; }
+  .study-resource-content--image { padding:8px; }
+}

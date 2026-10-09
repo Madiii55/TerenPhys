@@ -1,6 +1,6 @@
 {
   "name": "TerenPhys - Обучение физике",
-  "description": "Платформа для изучения физики: учебные материалы и посты для 7–9 классов.",
+  "description": "Платформа для изучения физики: учебные материалы и посты для 7–12 классов.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

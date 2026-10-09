@@ -1,24 +1,26 @@
 import React from 'react';
 import { ArrowRight, Send } from 'lucide-react';
 import { NavTab } from './Navbar.tsx';
+import { useLanguage } from '../i18n/LanguageContext.tsx';
 
 interface HomePageProps {
   onNavigate: (tab: NavTab) => void;
 }
 
 export const HomePage: React.FC<HomePageProps> = ({ onNavigate: _onNavigate }) => {
+  const { t, language } = useLanguage();
   return (
     <main className="home-space relative min-h-[calc(100svh-5rem)] overflow-hidden flex items-center">
       <div className="max-w-7xl mx-auto px-6 w-full relative z-10">
         {/* Left Column: Typography & Action - positioned slightly higher for optimal visibility */}
         <div className="home-copy max-w-xl xl:max-w-2xl flex flex-col justify-center select-none -translate-y-6 sm:-translate-y-10 lg:-translate-y-14">
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-normal tracking-tight text-white leading-[1.12]">
-            Готовься <span className="text-sky-300">с нами</span>
+            {language === 'kk' ? <><span className="text-sky-300">{t('с нами')}</span>{' '}{t('Готовься')}</> : <>{t('Готовься')}{' '}<span className="text-sky-300">{t('с нами')}</span></>}
           </h1>
 
           <div className="mt-8 space-y-1 text-lg sm:text-xl text-slate-300 font-light leading-relaxed">
-            <p>Физика — это не просто формулы.</p>
-            <p>Это способ смотреть на мир.</p>
+            <p>{t("Физика — это не просто формулы.")}</p>
+            <p>{t("Это способ смотреть на мир.")}</p>
           </div>
 
           {/* Telegram Link */}

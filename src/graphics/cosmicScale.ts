@@ -5,7 +5,7 @@ import { smoothRange } from './cameraFlight.ts';
 export const GALAXY_SCALE = 4096;
 export const ZOOM_DURATION = 1.6;
 export const ORBIT_DURATION = 1.4;
-export const HOME_DISTANCE = 14.2;
+export const HOME_DISTANCE = 10.9;
 export const FAR_CLIP = GALAXY_SCALE * 720;
 export const GALAXY_SHAPE = { x: 1.18, y: 1, z: 0.87 } as const;
 

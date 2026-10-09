@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Logo } from './Logo.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
-import { LogOut } from 'lucide-react';
-import { GoogleIcon } from './GoogleIcon.tsx';
+import { useLanguage } from '../i18n/LanguageContext.tsx';
+import { LanguageSwitch } from './LanguageSwitch.tsx';
 
 export type NavTab = 'home' | 'profile' | 'study' | 'posts' | 'forum';
 
@@ -17,7 +17,17 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange,
   onOpenAuth,
 }) => {
-  const { user, logout } = useAuth();
+  const { user, authenticatedAccount, isLoading, logout } = useAuth();
+  const [leaving, setLeaving] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
+  const { t } = useLanguage();
+  const leave = async () => {
+    if (leaving) return;
+    setLeaving(true); setLogoutError('');
+    try { await logout(); }
+    catch { setLogoutError('Не удалось выйти. Попробуйте ещё раз.'); }
+    finally { setLeaving(false); }
+  };
 
   const navItems: { id: NavTab; label: string }[] = [
     { id: 'profile', label: 'Профиль' },
@@ -46,7 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     : 'text-slate-300 hover:text-white'
                 }`}
               >
-                {item.label}
+                {t(item.label)}
                 {isActive && (
                   <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-300 shadow-[0_0_12px_#38bdf866] rounded-full transition-all" />
                 )}
@@ -56,8 +66,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* Right: Auth buttons or User Profile Pill */}
-        <div className="order-2 flex items-center space-x-5 text-[15px] md:order-3">
-          {user ? (
+        <div className="site-header-tools order-2 flex items-center gap-4 text-[15px] md:order-3">
+          <LanguageSwitch />
+          {user || authenticatedAccount ? (
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => onTabChange('profile')}
@@ -66,9 +77,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                     ? 'border-sky-300/45 bg-sky-400/10 text-sky-200'
                     : 'border-white/15 hover:border-white/30 text-slate-200 hover:bg-white/5'
                 }`}
-                title="Перейти в личный кабинет"
+                title={t("Перейти в личный кабинет")}
               >
-                {user.avatarUrl ? (
+                {user?.avatarUrl ? (
                   <img
                     src={user.avatarUrl}
                     alt={user.name}
@@ -76,44 +87,37 @@ export const Navbar: React.FC<NavbarProps> = ({
                   />
                 ) : (
                   <div className="w-6 h-6 rounded-full bg-[#0284c7] text-white flex items-center justify-center text-xs font-medium">
-                    {user.name.charAt(0).toUpperCase()}
+                    {(user?.name || authenticatedAccount?.email || 'T').charAt(0).toUpperCase()}
                   </div>
                 )}
-                <span className="text-sm font-medium max-w-[120px] truncate">
-                  {user.name.split(' ')[0]}
+                <span className="site-member-name text-sm font-medium max-w-[120px] truncate">
+                  {user?.name.split(' ')[0] || t("Профиль")}
                 </span>
-                {user.provider === 'google' && (
-                  <GoogleIcon className="w-3.5 h-3.5" />
-                )}
               </button>
 
               <button
-                onClick={logout}
+                onClick={leave}
+                disabled={leaving}
                 className="text-slate-400 hover:text-rose-300 p-1.5 rounded-full hover:bg-white/5 transition-colors cursor-pointer"
-                title="Выйти из аккаунта"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+                title={t("Выйти из аккаунта")}
+              >{leaving ? t("Подождите…") : t("Выйти")}</button>
             </div>
-          ) : (
-            <div className="flex items-center space-x-5">
-              <span className="text-slate-600 font-light select-none">|</span>
+          ) : isLoading ? <span role="status">{t("Проверяем…")}</span> : (
+            <div className="flex items-center gap-4">
+              <span className="hidden sm:inline text-slate-600 font-light select-none">|</span>
               <button
                 onClick={() => onOpenAuth('login')}
                 className="text-slate-300 hover:text-white transition-colors cursor-pointer"
-              >
-                Войти
-              </button>
+              >{t("Войти")}</button>
               <button
                 onClick={() => onOpenAuth('register')}
-                className="text-sky-300 hover:text-sky-100 font-medium transition-colors cursor-pointer"
-              >
-                Регистрация
-              </button>
+                className="site-register text-sky-300 hover:text-sky-100 font-medium transition-colors cursor-pointer"
+              >{t("Регистрация")}</button>
             </div>
           )}
         </div>
       </div>
+      {logoutError && <p role="alert" className="max-w-7xl mx-auto px-4 sm:px-6 pb-3 text-sm text-rose-200">{t(logoutError)}</p>}
     </header>
   );
 };

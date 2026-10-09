@@ -1,0 +1,40 @@
+.attachment-backdrop { position:fixed; inset:0; z-index:120; padding:24px; display:grid; place-items:center; background:#02050ce8; backdrop-filter:blur(10px); color:#eeeae2; font:13px/1.5 'Manrope',Arial,sans-serif; }
+.attachment-viewer { display:flex; flex-direction:column; width:min(1200px,100%); height:min(920px,calc(100svh - 48px)); min-height:0; overflow:hidden; background:#101720; border:1px solid #d9e5ef33; border-radius:3px; box-shadow:0 24px 90px #0008; }
+.attachment-toolbar { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:18px 24px; border-bottom:1px solid #d9e5ef25; }
+.attachment-title { min-width:0; display:flex; align-items:center; gap:14px; }
+.attachment-title > span { flex-shrink:0; font-size:10px; letter-spacing:.08em; color:#a1d4e7; border:1px solid #a1d4e744; padding:6px 8px; }
+.attachment-title h2 { font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.attachment-tools { display:flex; align-items:center; gap:22px; flex-shrink:0; }
+.attachment-tools button,.attachment-navigation button { cursor:pointer; padding:8px; }
+.attachment-viewer svg { width:18px; height:18px; stroke-width:1.5; }
+.attachment-viewer :is(button,a):focus-visible { outline:2px solid #a1d4e7; outline-offset:3px; }
+.attachment-viewer :is(button,a):hover { color:#a1d4e7; }
+.attachment-viewer button:disabled { color:#65707b; cursor:default; }
+.attachment-download { display:flex; align-items:center; gap:9px; font-size:12px; }
+.attachment-navigation { display:flex; gap:4px; align-items:center; padding:8px 18px; border-bottom:1px solid #d9e5ef25; }
+.attachment-navigation > span { font-variant-numeric:tabular-nums; font-size:11px; min-width:48px; text-align:center; color:#b7c2cf; }
+.attachment-tabs { display:flex; gap:4px; overflow:auto; margin-left:12px; border-left:1px solid #d9e5ef25; padding-left:12px; min-width:0; scrollbar-width:thin; }
+.attachment-tabs button { font:inherit; white-space:nowrap; max-width:260px; overflow:hidden; text-overflow:ellipsis; color:#94a2b3; border-bottom:1px solid transparent; }
+.attachment-tabs button[aria-current="true"] { color:#eeeae2; border-bottom-color:#a1d4e7; }
+.attachment-content { flex:1; min-height:0; display:grid; background:#080d15; overflow:auto; }
+.attachment-frame { width:100%; height:100%; border:0; background:#e9e8e4; }
+.attachment-content--image { place-items:center; padding:16px; }
+.attachment-content > img { display:block; max-width:100%; max-height:100%; object-fit:contain; }
+.attachment-content :is(video,audio) { align-self:center; justify-self:center; width:min(100%,900px); max-height:100%; }
+.attachment-content--audio { padding:24px; }
+.attachment-state { display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:18px; padding:24px; color:#c0cbd6; }
+.attachment-spinner { width:18px; height:18px; border:1px solid #a1d4e745; border-top-color:#a1d4e7; border-radius:50%; animation:dispatch-spin .9s linear infinite; }
+.attachment-footer { padding:10px 24px; color:#9ba9b9; font-size:10px; border-top:1px solid #d9e5ef25; }
+@media(max-width:650px) {
+  .attachment-backdrop { padding:0; }
+  .attachment-viewer { height:100svh; width:100%; border:0; border-radius:0; }
+  .attachment-toolbar { padding:14px 16px; gap:10px; }
+  .attachment-title { gap:8px; }
+  .attachment-title h2 { font-size:12px; }
+  .attachment-tools { gap:10px; }
+  .attachment-download > span { display:none; }
+  .attachment-navigation { padding:7px 10px; }
+  .attachment-tabs { margin-left:5px; padding-left:5px; }
+  .attachment-footer { padding:10px 16px; }
+}
+@media(prefers-reduced-motion:reduce) { .attachment-spinner { animation:none; } }

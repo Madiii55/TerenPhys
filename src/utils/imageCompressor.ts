@@ -1,6 +1,6 @@
 /**
  * Utility to crop and compress user-uploaded avatar images
- * before sending to Firestore to stay far below the 1MB document limit.
+ * before uploading to Supabase Storage.
  */
 export async function compressAvatarImage(
   file: File,

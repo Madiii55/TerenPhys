@@ -1,23 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  limit,
-  onSnapshot,
-  query,
-  where,
-} from 'firebase/firestore';
-import { BookOpen, LoaderCircle, LockKeyhole, Send } from 'lucide-react';
-import { db } from '../firebase.ts';
+import { ArrowUpRight } from 'lucide-react';
+import '../styles/dispatches.css';
+import { supabase, avatarUrl } from '../supabase.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 
-type Grade = 7 | 8 | 9;
+import { SCHOOL_GRADES, type SchoolGrade } from '../learning/catalogue.ts';
+import { useLanguage } from '../i18n/LanguageContext.tsx';
+import { TelegramFeed } from './TelegramFeed.tsx';
 
-interface ClassPost {
+export interface ClassPost {
   id: string;
-  grade: Grade;
+  grade: SchoolGrade;
   text: string;
   authorId: string;
   authorName: string;
@@ -27,15 +20,14 @@ interface ClassPost {
 
 interface PostsPageProps {
   onOpenAuth: (mode: 'login' | 'register') => void;
+  active?: boolean;
 }
 
-const GRADES: Grade[] = [7, 8, 9];
-
-const formatPublishedAt = (value: string) => {
+const formatPublishedAt = (value: string, locale: string, t: (source: string) => string) => {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'только что';
+  if (Number.isNaN(date.getTime())) return t('только что');
 
-  return new Intl.DateTimeFormat('ru-RU', {
+  return new Intl.DateTimeFormat(locale, {
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
@@ -43,9 +35,24 @@ const formatPublishedAt = (value: string) => {
   }).format(date);
 };
 
-export const PostsPage: React.FC<PostsPageProps> = ({ onOpenAuth }) => {
+export function PostEntry({ post }: { post: ClassPost }) {
+  const { t, intlLocale } = useLanguage();
+  return <article className="dispatch-entry">
+    <header>
+      <span className="dispatch-avatar" aria-hidden="true">
+        {post.authorAvatarUrl ? <img src={post.authorAvatarUrl} alt="" loading="lazy" decoding="async"/>
+          : post.authorName?.charAt(0)?.toUpperCase() || 'T'}
+      </span>
+      <span className="dispatch-author">{post.authorName || t("Автор TerenPhys")}</span>
+      <time dateTime={post.createdAt}>{formatPublishedAt(post.createdAt, intlLocale, t)}</time>
+    </header>
+    <p className="dispatch-text">{post.text}</p>
+  </article>;
+}
+
+function ClassPostsFeed({ selectedGrade, active: pageActive }: { selectedGrade: SchoolGrade; active: boolean }) {
+  const { t } = useLanguage();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [selectedGrade, setSelectedGrade] = useState<Grade>(7);
   const [posts, setPosts] = useState<ClassPost[]>([]);
   const [isPostsLoading, setIsPostsLoading] = useState(true);
   const [postsError, setPostsError] = useState('');
@@ -56,36 +63,40 @@ export const PostsPage: React.FC<PostsPageProps> = ({ onOpenAuth }) => {
   const [publishError, setPublishError] = useState('');
 
   useEffect(() => {
+    if (!pageActive) return;
     setIsPostsLoading(true);
     setPostsError('');
 
-    const postsQuery = query(
-      collection(db, 'posts'),
-      where('grade', '==', selectedGrade),
-      limit(100)
-    );
-
-    const unsubscribe = onSnapshot(
-      postsQuery,
-      (snapshot) => {
-        const nextPosts = snapshot.docs
-          .map((postDoc) => ({ id: postDoc.id, ...postDoc.data() }) as ClassPost)
-          .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
-
-        setPosts(nextPosts);
-        setIsPostsLoading(false);
-      },
-      () => {
-        setPosts([]);
+    let active = true;
+    let request = 0;
+    const abort = new AbortController();
+    const loadPosts = async () => {
+      const version = ++request;
+      const { data, error } = await supabase.from('posts').select('*')
+        .eq('grade', selectedGrade).order('created_at', { ascending: false })
+        .order('id', { ascending: false }).limit(100).abortSignal(abort.signal);
+      if (!active || version !== request) return;
+      if (error) {
         setPostsError('Не удалось загрузить посты. Попробуйте обновить страницу.');
-        setIsPostsLoading(false);
+      } else {
+        setPostsError('');
+        setPosts((data || []).map(post => ({ id: String(post.id), grade: post.grade as SchoolGrade,
+          text: post.text, authorId: post.author_id, authorName: post.author_name,
+          authorAvatarUrl: avatarUrl(post.author_avatar_path, post.created_at), createdAt: post.created_at })));
       }
-    );
-
-    return unsubscribe;
-  }, [selectedGrade]);
+      setIsPostsLoading(false);
+    };
+    void loadPosts();
+    const channel = supabase.channel('class-posts-' + selectedGrade)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts', filter: 'grade=eq.' + selectedGrade }, () => void loadPosts())
+      .subscribe(status => { if (status === 'SUBSCRIBED') void loadPosts(); });
+    const refresh = () => { if (document.visibilityState === 'visible') void loadPosts(); };
+    document.addEventListener('visibilitychange', refresh);
+    return () => { active = false; request++; abort.abort(); document.removeEventListener('visibilitychange', refresh); void supabase.removeChannel(channel); };
+  }, [selectedGrade, pageActive]);
 
   useEffect(() => {
+    if (!pageActive) return;
     let isCurrent = true;
 
     const checkAuthorAccess = async () => {
@@ -99,16 +110,10 @@ export const PostsPage: React.FC<PostsPageProps> = ({ onOpenAuth }) => {
 
       setIsAuthorLoading(true);
       try {
-        const authorSnapshot = await getDoc(
-          doc(db, 'postAuthors', user.id)
-        );
-        const author = authorSnapshot.data();
-        const allowedGrades = Array.isArray(author?.grades) ? author.grades : [];
-        const hasAccess = authorSnapshot.exists() &&
-          author?.isActive !== false &&
-          allowedGrades.includes(selectedGrade);
-
-        if (isCurrent) setCanPublish(hasAccess);
+        const { data, error } = await supabase.from('post_authors').select('is_active')
+          .eq('user_id', user.id).eq('grade', selectedGrade).maybeSingle();
+        if (error) throw error;
+        if (isCurrent) setCanPublish(data?.is_active === true);
       } catch {
         if (isCurrent) {
           setPublishError('Не удалось проверить права автора.');
@@ -122,7 +127,7 @@ export const PostsPage: React.FC<PostsPageProps> = ({ onOpenAuth }) => {
     return () => {
       isCurrent = false;
     };
-  }, [selectedGrade, user?.id, user?.emailVerified]);
+  }, [selectedGrade, user?.id, user?.emailVerified, pageActive]);
 
   const composerState = useMemo(() => {
     if (isAuthLoading || isAuthorLoading) return 'loading';
@@ -144,14 +149,12 @@ export const PostsPage: React.FC<PostsPageProps> = ({ onOpenAuth }) => {
     setIsPublishing(true);
     setPublishError('');
     try {
-      await addDoc(collection(db, 'posts'), {
+      const { error } = await supabase.from('posts').insert({
         grade: selectedGrade,
         text,
-        authorId: user.id,
-        authorName: user.name,
-        authorAvatarUrl: user.avatarUrl || '',
-        createdAt: new Date().toISOString(),
+        author_id: user.id,
       });
+      if (error) throw error;
       setPostText('');
     } catch {
       setPublishError('Пост не удалось опубликовать. Повторите попытку.');
@@ -161,145 +164,49 @@ export const PostsPage: React.FC<PostsPageProps> = ({ onOpenAuth }) => {
   };
 
   return (
-    <main className="relative min-h-[calc(100svh-5rem)] py-8 sm:py-10 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8">
-          <aside className="rounded-2xl border border-white/15 bg-slate-950/65 p-3 shadow-xl backdrop-blur-md h-fit">
-            <p className="px-3 pt-2 pb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Классы
-            </p>
-            <div className="space-y-1">
-              {GRADES.map((grade) => {
-                const isSelected = grade === selectedGrade;
-
-                return (
-                  <button
-                    key={grade}
-                    type="button"
-                    onClick={() => setSelectedGrade(grade)}
-                    className={
-                      isSelected
-                        ? 'w-full rounded-xl bg-[#0284c7] px-4 py-4 text-left text-white transition-colors cursor-pointer'
-                        : 'w-full rounded-xl px-4 py-4 text-left text-slate-200 hover:bg-white/10 hover:text-sky-300 transition-colors cursor-pointer'
-                    }
-                  >
-                    <span className="block text-3xl font-light leading-none">{grade}</span>
-                    <span className="mt-1 block text-sm opacity-80">класс</span>
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
-
-          <section className="overflow-hidden rounded-2xl border border-white/15 bg-slate-950/55 shadow-xl backdrop-blur-[1px]">
-            <header className="border-b border-white/10 px-5 py-4 sm:px-6">
-              <h2 className="text-lg font-medium text-white">{selectedGrade} класс</h2>
-            </header>
-
-            <div className="min-h-[390px] p-4 sm:p-6">
-              {isPostsLoading ? (
-                <div className="flex min-h-[340px] items-center justify-center text-sm text-slate-300">
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                  Загружаем посты…
-                </div>
-              ) : postsError ? (
-                <div className="flex min-h-[340px] items-center justify-center text-center text-sm text-rose-300">
-                  {postsError}
-                </div>
-              ) : posts.length === 0 ? (
-                <div className="flex min-h-[340px] flex-col items-center justify-center text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-400/15 text-sky-300 shadow-sm">
-                    <BookOpen className="h-5 w-5" />
-                  </div>
-                  <p className="mt-4 text-base font-medium text-slate-100">Пока здесь тихо</p>
-                  <p className="mt-1 max-w-sm text-sm leading-relaxed text-slate-300">
-                    Первый пост для {selectedGrade} класса появится здесь.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {posts.map((post) => (
-                    <article key={post.id} className="rounded-2xl border border-white/10 bg-slate-900/85 p-4 shadow-sm">
-                      <div className="flex items-start gap-3">
-                        {post.authorAvatarUrl ? (
-                          <img
-                            src={post.authorAvatarUrl}
-                            alt={post.authorName}
-                            className="h-9 w-9 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0284c7] text-sm font-medium text-white">
-                            {post.authorName?.charAt(0)?.toUpperCase() || 'T'}
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                            <p className="font-medium text-white">{post.authorName || 'Автор TerenPhys'}</p>
-                            <time className="text-xs text-slate-400">{formatPublishedAt(post.createdAt)}</time>
-                          </div>
-                          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-200">
-                            {post.text}
-                          </p>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="border-t border-white/10 bg-slate-950/40 p-4 sm:p-5">
-              {composerState === 'loading' ? (
-                <div className="flex items-center gap-2 text-sm text-slate-300">
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Проверяем права автора…
-                </div>
-              ) : composerState === 'guest' ? (
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-slate-300">Войдите, чтобы получить доступ к публикации.</p>
-                  <button
-                    type="button"
-                    onClick={() => onOpenAuth('login')}
-                    className="rounded-xl bg-[#0284c7] px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 transition-colors cursor-pointer"
-                  >
-                    Войти
+        <TelegramFeed key={selectedGrade} grade={selectedGrade} active={pageActive}
+          additionalEntries={posts.map(post => ({ key: 'site-' + post.id, publishedAt: post.createdAt, content: <PostEntry post={post}/> }))}
+          additionalLoading={isPostsLoading} additionalError={postsError}>
+          {composerState !== 'guest' && <footer className="dispatch-composer">
+            {composerState === 'loading' ? <p className="dispatch-permission" role="status">{t("Проверяем права автора…")}</p>
+              : composerState === 'restricted' ? <p className="dispatch-permission">{t("Публиковать материалы для этого класса могут назначенные авторы.")}</p>
+              : <form onSubmit={handlePublish}>
+                <label htmlFor="post-text" className="dispatch-label">{t("Новая публикация")}</label>
+                <textarea id="post-text" value={postText} onChange={event => setPostText(event.target.value)}
+                  maxLength={2000} rows={4} placeholder={t('Напишите пост для {grade} класса…', { grade: selectedGrade })}/>
+                <div className="dispatch-compose-actions">
+                  <span>{postText.length} / 2000</span>
+                  <button type="submit" className="dispatch-publish" disabled={!postText.trim() || isPublishing}>
+                    {isPublishing ? t("Публикуем…") : t("Опубликовать")}<ArrowUpRight aria-hidden="true"/>
                   </button>
                 </div>
-              ) : composerState === 'restricted' ? (
-                <div className="flex items-start gap-3 text-sm text-slate-300">
-                  <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                  <p>Публикация доступна только авторам, которым назначен этот класс.</p>
-                </div>
-              ) : (
-                <form onSubmit={handlePublish}>
-                  <label htmlFor="post-text" className="sr-only">Текст поста</label>
-                  <textarea
-                    id="post-text"
-                    value={postText}
-                    onChange={(event) => setPostText(event.target.value)}
-                    maxLength={2000}
-                    rows={3}
-                    placeholder={'Напишите пост для ' + selectedGrade + ' класса…'}
-                    className="w-full resize-y rounded-xl border border-white/15 bg-slate-900/85 px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/15"
-                  />
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <span className="text-xs text-gray-400">{postText.length}/2000</span>
-                    <button
-                      type="submit"
-                      disabled={!postText.trim() || isPublishing}
-                      className="inline-flex items-center gap-2 rounded-xl bg-[#0284c7] px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors cursor-pointer"
-                    >
-                      {isPublishing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      Опубликовать
-                    </button>
-                  </div>
-                </form>
-              )}
-              {publishError && <p className="mt-3 text-sm text-rose-300">{publishError}</p>}
-            </div>
-          </section>
-        </div>
-      </div>
-    </main>
+              </form>}
+            {publishError && <p className="dispatch-error" role="alert">{t(publishError)}</p>}
+          </footer>}
+        </TelegramFeed>
   );
+}
+
+export const PostsPage: React.FC<PostsPageProps> = ({ active = true }) => {
+  const { t, gradeLabel } = useLanguage();
+  const [selectedGrade, setSelectedGrade] = useState<SchoolGrade>(7);
+  const [isGeneral, setIsGeneral] = useState(true);
+  return <main className="posts-page dispatch-page">
+    <div className="dispatch-layout">
+      <aside className="dispatch-sidebar">
+        <p className="dispatch-label">{t("Посты")}</p>
+        <nav className="dispatch-grades" aria-label={t("Классы публикаций")}>
+          <button type="button" className="dispatch-general" aria-pressed={isGeneral} onClick={() => setIsGeneral(true)}>
+            <span>{t("Общий чат")}</span><ArrowUpRight aria-hidden="true"/>
+          </button>
+          {SCHOOL_GRADES.map(grade => <button key={grade} type="button" aria-pressed={!isGeneral && selectedGrade === grade}
+            onClick={() => { setSelectedGrade(grade); setIsGeneral(false); }} aria-label={gradeLabel(grade)}>
+            <span className="dispatch-grade-number">{grade}</span><span>{t("класс")}</span><ArrowUpRight aria-hidden="true"/>
+          </button>)}
+        </nav>
+      </aside>
+      <div className="dispatch-panel" hidden={!isGeneral}><TelegramFeed active={active && isGeneral}/></div>
+      <div className="dispatch-panel" hidden={isGeneral}><ClassPostsFeed selectedGrade={selectedGrade} active={active && !isGeneral}/></div>
+    </div>
+  </main>;
 };

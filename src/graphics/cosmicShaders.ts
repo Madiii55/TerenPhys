@@ -138,6 +138,12 @@ export function galaxyFragment(steps: number) { return `
       float r = length(p.xz);
       float outskirts = 1.0 - smoothstep(38.0, 54.0, r);
       if (outskirts < 0.001) continue;
+      // Reject empty volume before texture fetches, noise and colour work.
+      float thickness = 0.6 + r * 0.016 + 1.7 * exp(-r * r / 80.0);
+      float height = p.y - galacticWarp(p.xz, uTime);
+      float vertical = exp(-height * height / (2.0 * thickness * thickness))
+        * (1.0 - smoothstep(8.0, 11.5, abs(p.y)));
+      if (vertical < 0.001) continue;
       // A bounded local twist keeps the reference's dust structures intact;
       // the entire 3D volume rotates continuously with its containing group.
       float twist = 0.16 * sin(uTime * 0.22) / (1.0 + r * 0.06);
@@ -147,11 +153,6 @@ export function galaxyFragment(steps: number) { return `
       vec2 border = smoothstep(vec2(0.0), vec2(0.045), photoUv)
         * smoothstep(vec2(0.0), vec2(0.045), 1.0 - photoUv);
       vec3 photo = max(texture2D(uDiskPhoto, photoUv, 4.0).rgb - vec3(0.0006, 0.0008, 0.0016), vec3(0.0));
-      float thickness = 0.6 + r * 0.016 + 1.7 * exp(-r * r / 80.0);
-      float height = p.y - galacticWarp(p.xz, uTime);
-      float vertical = exp(-height * height / (2.0 * thickness * thickness))
-        * (1.0 - smoothstep(8.0, 11.5, abs(p.y)));
-      if (vertical < 0.001) continue;
       float turbulence = noise3(vec3(samplePosition * 0.6, p.y * 0.9 + uTime * 0.08));
       vec3 tint = mix(vec3(0.5, 0.35, 0.19), vec3(0.13, 0.19, 0.29), smoothstep(5.0, 30.0, r));
       vec3 fallback = tint * exp(-r / 17.0) * (0.4 + turbulence);
@@ -387,7 +388,7 @@ export function blackHoleFragment(steps: number) {
       float billow = pow(smoothstep(0.3, 0.72, noise3(cellSpace * 1.9 + offset * 0.3)), 2.0);
       // Large clouds are a faint density variation, not solid, brightly lit
       // lumps. Keep the fine particles and the absorbing continuous layer.
-      float density = 0.38 + large.x * LARGE_CLUMP_DENSITY + overlapping.x * OVERLAPPING_CLUMP_DENSITY + small.x * 2.0
+      float density = 0.29 + large.x * LARGE_CLUMP_DENSITY + overlapping.x * OVERLAPPING_CLUMP_DENSITY + small.x * 2.0
         + billow * 0.45 + micro.x * 0.12 + wisps * 0.03;
       float shading = (0.038 + large.x * LARGE_CLUMP_DENSITY * (0.18 + 0.15 * large.y)
         + overlapping.x * OVERLAPPING_CLUMP_DENSITY * (0.18 + 0.15 * overlapping.y)
@@ -398,6 +399,9 @@ export function blackHoleFragment(steps: number) {
     void sampleAccretion(vec3 p, vec3 direction, out float density, out vec3 source) {
       density = 0.0;
       source = vec3(0.0);
+      // The disk's maximum half-height plus its bounded 0.07-unit warp.
+      // Most ray steps cross empty space: avoid all trigonometry/noise there.
+      if (abs(p.y) > ${(ACCRETION_DISK.outerThickness * 2.5 + 0.071).toFixed(4)}) return;
       float r = length(p.xz);
       if (r < INNER - 0.15 || r > OUTER + 0.1) return;
       float angle = atan(p.z, p.x);
@@ -416,13 +420,23 @@ export function blackHoleFragment(steps: number) {
       vec3 matter = mix(older, younger, uMatterMix);
       density = matter.x * radial * vertical * pow(INNER / r, 0.35);
       float heat = pow(INNER / r, 0.75);
-      vec3 color = mix(vec3(0.85, 0.12, 0.035), vec3(2.9, 1.0, 0.27), smoothstep(0.3, 0.75, heat));
-      color = mix(color, vec3(4.7, 3.0, 1.5), smoothstep(0.75, 1.0, heat));
+      vec3 color = mix(vec3(1.25, 0.12, 0.018), vec3(3.8, 1.35, 0.24), smoothstep(0.3, 0.75, heat));
+      color = mix(color, vec3(6.0, 5.0, 3.7), smoothstep(0.75, 1.0, heat));
       vec3 orbitalDirection = normalize(vec3(-p.z, 0.0, p.x));
-      float beta = 0.38 * sqrt(INNER / r);
+      float beta = 0.28 * sqrt(INNER / r);
       float doppler = pow(1.0 / (1.0 + beta * dot(orbitalDirection, normalize(direction))), 2.6);
       float redshift = sqrt(max(1.0 - RS / r, 0.0));
-      source = color * pow(INNER / r, 1.05) * redshift * doppler * matter.y;
+      // Differentially advected filaments sharpen the hot flow without adding
+      // bulky clouds or a fake ring above the foreground volume.
+      float flow = angle - uTime * orbitalRate(r);
+      float turbulence = noise3(vec3(cos(flow) * r * 3.0, sin(flow) * r * 3.0, height * 12.0));
+      float fine = noise3(vec3(cos(flow) * r * 10.0, sin(flow) * r * 10.0, height * 26.0));
+      float filament = pow(0.5 + 0.5 * sin(r * 22.0 + flow * 3.0 + turbulence * 9.0), 4.0)
+        * smoothstep(0.18, 0.72, fine);
+      // Broken, sheared streams and cooler gaps avoid perfectly concentric
+      // painted rings; the hottest inner flow approaches a white thermal glow.
+      float emission = (0.24 + matter.y * 0.95) * (0.62 + turbulence * 0.56 + filament * 0.6 + fine * 0.12);
+      source = color * pow(INNER / r, 1.05) * redshift * doppler * emission;
       source += vec3(2.6, 1.4, 0.55) * matter.z * heat * 0.55;
     }
 
@@ -449,6 +463,7 @@ export function blackHoleFragment(steps: number) {
         float diskRadius = length(local.xz);
         float thickness = mix(${ACCRETION_DISK.innerThickness.toFixed(4)}, ${ACCRETION_DISK.outerThickness.toFixed(4)}, smoothstep(INNER, OUTER, diskRadius));
         if (diskRadius > INNER - 0.2 && diskRadius < OUTER + 0.2
+            && abs(local.y) < ${(ACCRETION_DISK.outerThickness * 2.5 + 0.171).toFixed(4)}
             && abs(local.y - diskHeight(local.xz)) < thickness * 2.5 + 0.1) {
           dt = min(dt, ${steps >= 192 ? '0.13' : '0.18'});
         }

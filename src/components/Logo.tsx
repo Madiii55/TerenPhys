@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLanguage } from '../i18n/LanguageContext.tsx';
 
 interface LogoProps {
   onClick?: () => void;
@@ -6,16 +7,17 @@ interface LogoProps {
 }
 
 export const Logo: React.FC<LogoProps> = ({ onClick, className = '' }) => {
+  const { t } = useLanguage();
   return (
     <button
       type="button"
-      aria-label="На главную"
+      aria-label={t("На главную")}
       onClick={onClick}
       className={`flex items-center cursor-pointer select-none ${className}`}
-      title="TerenPhys - На главную"
+      title={t("TerenPhys - На главную")}
     >
       <svg
-        className="h-10 w-auto"
+        className="h-8 sm:h-10 w-auto"
         viewBox="0 0 240 56"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"

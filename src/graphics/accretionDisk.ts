@@ -1,6 +1,6 @@
 /** Artistic, browser-scale accretion parameters; not an astrophysical solver. */
 export const ACCRETION_DISK = {
-  horizon: 0.58,
+  horizon: 0.64,
   inner: 1.82,
   outer: 5.4,
   innerThickness: 0.08,
