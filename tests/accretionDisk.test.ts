@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ACCRETION_DISK, accretionMatterPhase, accretionOrbitalRate, accretionTransmission } from '../src/graphics/accretionDisk.ts';
+import { ACCRETION_DISK, ACCRETION_STEPS, accretionMatterPhase, accretionOrbitalRate, accretionTransmission } from '../src/graphics/accretionDisk.ts';
 import { blackHoleFragment } from '../src/graphics/cosmicShaders.ts';
 
 const near = (a: number, b: number, tolerance = 1e-8) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 
 test('accretion stays thin and compact while retaining volume and a small tilt', () => {
-  assert.ok(ACCRETION_DISK.inner > ACCRETION_DISK.horizon);
+  near(ACCRETION_DISK.inner, 3 * ACCRETION_DISK.horizon);
   assert.ok(ACCRETION_DISK.outer > ACCRETION_DISK.inner);
   assert.ok(ACCRETION_DISK.innerThickness > 0);
   assert.ok(ACCRETION_DISK.outerThickness > ACCRETION_DISK.innerThickness);
@@ -19,12 +19,14 @@ test('accretion stays thin and compact while retaining volume and a small tilt',
 });
 
 test('orbital speed is bounded, differential, and independent of material age', () => {
-  near(accretionOrbitalRate(ACCRETION_DISK.inner), 2.3);
-  assert.ok(accretionOrbitalRate(ACCRETION_DISK.outer) > 0.9);
+  const innerSpeed = accretionOrbitalRate(ACCRETION_DISK.inner);
+  assert.ok(innerSpeed > 0.5 && innerSpeed < 1.5);
+  near(accretionOrbitalRate(ACCRETION_DISK.inner * 4), innerSpeed / 8);
+  near(accretionOrbitalRate(0), innerSpeed);
   let previous = Infinity;
   for (let radius = ACCRETION_DISK.inner; radius <= ACCRETION_DISK.outer; radius += 0.01) {
     const speed = accretionOrbitalRate(radius);
-    assert.ok(Number.isFinite(speed) && speed > 0.65 && speed <= previous);
+    assert.ok(Number.isFinite(speed) && speed > 0 && speed <= previous);
     previous = speed;
   }
 });
@@ -32,7 +34,7 @@ test('orbital speed is bounded, differential, and independent of material age', 
 test('large clouds have low density and softened emission in both renderers', () => {
   assert.ok(ACCRETION_DISK.largeClumpDensity > 0 && ACCRETION_DISK.largeClumpDensity < 0.5);
   assert.ok(ACCRETION_DISK.overlappingClumpDensity > 0 && ACCRETION_DISK.overlappingClumpDensity < 0.5);
-  for (const steps of [144, 192]) {
+  for (const steps of Object.values(ACCRETION_STEPS)) {
     const shader = blackHoleFragment(steps);
     assert.ok(shader.includes(`const float LARGE_CLUMP_DENSITY = ${ACCRETION_DISK.largeClumpDensity.toFixed(4)};`));
     assert.ok(shader.includes(`const float OVERLAPPING_CLUMP_DENSITY = ${ACCRETION_DISK.overlappingClumpDensity.toFixed(4)};`));
@@ -80,14 +82,14 @@ test('attenuation composes through depth and is independent of step subdivision'
 });
 
 test('desktop and mobile shaders integrate 3D clumps without an overlaid circle', () => {
-  for (const steps of [144, 192]) {
+  for (const steps of Object.values(ACCRETION_STEPS)) {
     const shader = blackHoleFragment(steps);
     assert.match(shader, /vec2 particleCloud\(vec3 p/);
     assert.match(shader, /uniform mat3 uDiskFrame/);
     assert.match(shader, /sampleAccretion\(uDiskFrame \* \(\(p \+ next\) \* 0\.5\)/);
     assert.match(shader, /light \+= transmission \* absorption \* source/);
     assert.match(shader, /transmission \*= 1\.0 - absorption/);
-    assert.match(shader, /if \(!captured && !opaque\)/);
+    assert.match(shader, /if \(!captured && !opaque && escaped\)/);
     assert.doesNotMatch(shader, /photonRing|diskHit|light = texture2D/);
   }
 });

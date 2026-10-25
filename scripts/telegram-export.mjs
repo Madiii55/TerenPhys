@@ -138,10 +138,10 @@ async function run(outputDirectory) {
     })());
     return { ...await uploaded.get(key), kind: item.kind, name: item.name };
   }
-  const queue = manifest.posts.slice();
+  let nextPost = 0;
   async function worker() {
-    while (queue.length) {
-      const post = queue.shift();
+    while (nextPost < manifest.posts.length) {
+      const post = manifest.posts[nextPost++];
       try {
         const attachments = await Promise.all(post.attachments.map(upload));
         const response = await fetch(endpoint, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },

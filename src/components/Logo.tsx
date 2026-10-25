@@ -12,8 +12,9 @@ export const Logo: React.FC<LogoProps> = ({ onClick, className = '' }) => {
     <button
       type="button"
       aria-label={t("На главную")}
+      data-einstein="navigate-home"
       onClick={onClick}
-      className={`flex items-center cursor-pointer select-none ${className}`}
+      className={`site-home-logo flex items-center cursor-pointer select-none ${className}`}
       title={t("TerenPhys - На главную")}
     >
       <svg

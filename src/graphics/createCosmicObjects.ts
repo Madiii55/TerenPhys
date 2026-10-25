@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { distantGalaxyFragment, galaxyFragment, galaxyVertex, galaxyVolumeFragment, galaxyVolumeVertex, starFragment, starVertex, worldVertex } from './cosmicShaders.ts';
-import galaxyDiskReferenceUrl from '../assets/images/galaxy-disk-reference.png';
+import galaxyDiskReferenceUrl from '../assets/images/galaxy-disk-reference.webp';
 
 function seededRandom(seed: number) {
   return () => {
@@ -112,6 +112,39 @@ export function createGalaxyClouds(mobile = false) {
   };
   material.addEventListener('dispose', () => { disposed = true; texture.dispose(); });
   return disk;
+}
+
+/** Sparse 3D stars between the accretion disk and the galaxy's stellar bulge. */
+export function createNuclearCluster(count: number) {
+  const random = seededRandom(13026);
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const phases = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const radius = 35 * Math.exp(random() * Math.log(12000 / 35));
+    const angle = random() * Math.PI * 2;
+    const vertical = random() * 2 - 1;
+    const horizontal = Math.sqrt(1 - vertical * vertical);
+    positions.set([radius * horizontal * Math.cos(angle), radius * vertical * .6, radius * horizontal * Math.sin(angle)], i * 3);
+    const brightness = .25 + random() * .6;
+    colors.set([brightness, brightness * .78, brightness * .56], i * 3);
+    sizes[i] = .4 + radius * (.006 + random() * .008);
+    phases[i] = random() * Math.PI * 2;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  return new THREE.Points(geometry, new THREE.ShaderMaterial({
+    vertexShader: starVertex, fragmentShader: starFragment, vertexColors: true,
+    uniforms: {
+      uTime: { value: 0 }, uOrbit: { value: 0 }, uSoft: { value: 0 },
+      uPixelRatio: { value: 1 }, uOpacity: { value: 0 },
+    },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
 }
 
 /** Additional clumpy clouds occupy real positions throughout the galaxy volume. */

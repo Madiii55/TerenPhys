@@ -74,6 +74,29 @@ test('known Telegram album IDs survive edits and retain each unavailable attachm
   assert.equal(group.attachments[0].source_message_id,2);
 });
 
+test('album attachments retain first occurrences and every unavailable file without changing source rows', () => {
+  const rows = [post(2, { media_group_id: 'album', attachments: [
+    {kind:'document',path:'nisphysicshub/assets/shared.docx',name:'first'},
+    {kind:'document',external:true,name:'missing'},
+    {kind:'document',path:'nisphysicshub/assets/shared.docx',name:'duplicate'},
+  ] }), post(1, { media_group_id: 'album', attachments: [
+    {kind:'document',path:'nisphysicshub/assets/shared.docx',name:'duplicate from other message'},
+    {kind:'document',external:true,name:'missing'},
+    {kind:'document',path:'nisphysicshub/assets/unique.docx',name:'unique'},
+  ] })];
+  const snapshot = JSON.stringify(rows), [group] = groupTelegramPosts(rows);
+  assert.deepEqual(group.attachments.map(item => [item.name,item.source_message_id]), [
+    ['first',2],['missing',2],['missing',1],['unique',1],
+  ]);
+  assert.equal(JSON.stringify(rows), snapshot);
+});
+
+test('merged history orders timestamps across offsets and breaks equal-time ties by message ID', () => {
+  const rows = [post(2,{published_at:'2026-10-07T12:00:00Z'}),post(3,{published_at:'2026-10-07T17:00:00+05:00'}),
+    post(1,{published_at:'2026-10-07T13:00:00Z'})];
+  assert.deepEqual(mergeTelegramPosts([],rows).map(item=>item.message_id),[1,3,2]);
+});
+
 test('a later bot edit supplies a real album ID without splitting the remaining archive attachments', () => {
   const rows = [post(431,{text:'caption',source_kind:'bot',media_group_id:'real-album'}),post(430),post(429),post(428)];
   assert.equal(groupTelegramPosts(rows).length,1);assert.equal(groupTelegramPosts(rows)[0].attachments.length,4);
@@ -104,6 +127,19 @@ async function compiled(source: string, mockDocx = false, supabaseSource = 'expo
   const result = await build({stdin:{contents:source,resolveDir:fileURLToPath(new URL('..',import.meta.url)),sourcefile:'preview-test.tsx'},
     bundle:true,write:false,platform:'node',format:'cjs',external:['react','react-dom','react-dom/*','docx-preview','dompurify'],loader:{'.css':'empty'},
     plugins:[{name:'isolated-preview',setup(builder) {
+      builder.onResolve({filter:/^pdfjs-dist\/legacy\/build\/pdf.worker.mjs\?url$/},()=>({path:'worker',namespace:'pdf-worker-test'}));
+      builder.onLoad({filter:/.*/,namespace:'pdf-worker-test'},()=>({contents:'export default "/test-pdf-worker.mjs";',loader:'js'}));
+      builder.onResolve({filter:/^pdfjs-dist\/legacy\/build\/pdf.mjs$/},()=>({path:'pdf',namespace:'pdf-render-test'}));
+      builder.onLoad({filter:/.*/,namespace:'pdf-render-test'},()=>({contents:`
+        export const GlobalWorkerOptions={};
+        export function getDocument(){return {destroy:async()=>{},promise:Promise.resolve({
+          numPages:3,getPage:async(number)=>({
+            getViewport:({scale})=>({width:600*scale,height:800*scale}),
+            render:({canvas})=>{canvas.dataset.page=String(number);return {promise:Promise.resolve(),cancel(){}}},
+            getTextContent:async()=>({items:[{str:'PDF text page '+number}]})
+          })
+        })}}
+      `,loader:'js'}));
       builder.onLoad({filter:/[\\/]src[\\/]supabase\.ts$/},()=>({contents:supabaseSource,loader:'ts'}));
       if(mockDocx) builder.onLoad({filter:/[\\/]src[\\/]telegram[\\/]docxPreview\.ts$/},()=>({contents:'export const renderDocxPreview = async () => "<html><body>Word preview</body></html>";',loader:'ts'}));
     }}],
@@ -194,6 +230,8 @@ function browserEnvironment() {
   }
   previous.set('IS_REACT_ACT_ENVIRONMENT',Object.getOwnPropertyDescriptor(globalThis,'IS_REACT_ACT_ENVIRONMENT'));
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  previous.set('ResizeObserver',Object.getOwnPropertyDescriptor(globalThis,'ResizeObserver'));
+  (globalThis as any).ResizeObserver = class { observe() {} disconnect() {} };
   return {dom,restore() {dom.window.close();for(const [key,value]of previous) {if(value)Object.defineProperty(globalThis,key,value);else delete(globalThis as any)[key];}}};
 }
 
@@ -233,7 +271,7 @@ test('DOCX ZIP budget checks reject expanded bombs, encryption and corrupt direc
   assert.throws(()=>assertDocxBudget(new ArrayBuffer(24)),/Invalid/);
 });
 
-test('a real generated Word document renders text, a table and an equation in the sandbox preview', async () => {
+test('a real Word document renders text, tables and equations even when a standalone integral omits its base', async () => {
   const environment = browserEnvironment();
   try {
     const JSZip = createRequire(require.resolve('docx-preview'))('jszip'), zip = new JSZip();
@@ -241,10 +279,12 @@ test('a real generated Word document renders text, a table and an equation in th
     zip.file('_rels/.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
     zip.file('word/document.xml','<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body>'
       +'<w:p><w:r><w:t>Физика — 8 класс</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Ответ</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
-      +'<w:p><m:oMath><m:f><m:num><m:r><m:t>F</m:t></m:r></m:num><m:den><m:r><m:t>m</m:t></m:r></m:den></m:f></m:oMath></w:p></w:body></w:document>');
+      +'<w:p><m:oMath><m:f><m:num><m:r><m:t>F</m:t></m:r></m:num><m:den><m:r><m:t>m</m:t></m:r></m:den></m:f>'
+      +'<m:nary><m:naryPr><m:chr m:val="∫"/></m:naryPr><m:sub><m:r><m:t>0</m:t></m:r></m:sub><m:sup><m:r><m:t>1</m:t></m:r></m:sup></m:nary>'
+      +'</m:oMath></w:p></w:body></w:document>');
     const {renderDocxPreview} = await compiled("export {renderDocxPreview} from './src/telegram/docxPreview.ts';");
     const html = await renderDocxPreview(await zip.generateAsync({type:'arraybuffer'}),new AbortController().signal);
-    assert.match(html,/Физика — 8 класс/);assert.match(html,/<table/);assert.match(html,/<mfrac/);
+    assert.match(html,/Физика — 8 класс/);assert.match(html,/<table/);assert.match(html,/<mfrac/);assert.match(html,/∫/);assert.match(html,/<munderover/);
   } finally {environment.restore();}
 });
 
@@ -261,7 +301,12 @@ test('the file dialog switches PDF/Word, closes with Escape, restores focus and 
       {kind:'document',name:'two.docx',path:'nisphysicshub/assets/two.docx'}];
     const close = ()=>root.render(null);
     await act(async()=>root.render(React.createElement(Viewer,{items,initialIndex:0,onClose:close})));
-    assert.equal(document.body.style.overflow,'hidden');assert.ok(document.querySelector('iframe')?.src.includes('one.pdf'));
+    assert.equal(document.body.style.overflow,'hidden');assert.equal(document.querySelector('iframe'),null);
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,30));});
+    assert.equal(document.querySelector('canvas[role="img"]')?.getAttribute('data-page'),'1');
+    assert.match(document.querySelector('.study-pdf-text')?.textContent||'',/PDF text page 1/);
+    await act(async()=>{(document.querySelector('[aria-label="Следующая страница"]')as HTMLButtonElement).click();});
+    assert.equal(document.querySelector('canvas[role="img"]')?.getAttribute('data-page'),'2');
     await act(async()=>{(document.querySelector('[aria-label="Следующий файл"]')as HTMLButtonElement).click();await new Promise(resolve=>setTimeout(resolve,30));});
     assert.equal(document.querySelector('#attachment-title')?.textContent,'two.docx');
     const frame = document.querySelector('iframe');assert.equal(frame?.getAttribute('sandbox'),'allow-same-origin');assert.match(frame?.srcdoc||'',/Word preview/);

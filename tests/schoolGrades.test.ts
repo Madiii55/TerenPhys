@@ -66,7 +66,7 @@ test('rendered study, post and forum pages expose all six classes to guests', as
       sourcefile: 'school-pages.ts',
     },
     bundle: true, write: false, platform: 'node', format: 'cjs',
-    external: ['react', 'react-dom', 'react-dom/*'], loader: { '.css': 'empty' },
+    external: ['react', 'react-dom', 'react-dom/*', 'pdfjs-dist', 'pdfjs-dist/*'], loader: { '.css': 'empty' },
     plugins: [{ name: 'isolated-school-pages', setup(builder) {
       builder.onLoad({ filter: /[\\/]context[\\/]AuthContext\.tsx$/ }, () => ({
         contents: 'export function useAuth() { return { user: null, isLoading: false }; }', loader: 'ts',
@@ -92,5 +92,7 @@ test('study layout reserves the left galaxy area and stacks on smaller screens',
   const css = readFileSync(new URL('../src/styles/learning.css', import.meta.url), 'utf8');
   assert.match(css, /\.learning-layout \{[^}]*grid-template-columns: minmax\(240px, \.72fr\) minmax\(0, 1fr\)/);
   assert.match(css, /@media \(max-width: 900px\)[\s\S]*\.learning-layout \{[^}]*grid-template-columns: minmax\(0,1fr\)/);
-  assert.doesNotMatch(css, /height:\s*100vh|overflow:\s*hidden/);
+  // Hidden accessibility descriptions may clip text; the page layout must scroll.
+  const layoutRules = [...css.matchAll(/\.learning-(?:editorial|layout|body)\s*\{[^}]*\}/g)].map(match => match[0]).join('\n');
+  assert.doesNotMatch(layoutRules, /height:\s*100vh|overflow:\s*hidden/);
 });

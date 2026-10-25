@@ -1,4 +1,5 @@
 allowBuilds:
-  '@google/genai': false
   esbuild: true
-  protobufjs: false
+ignoredOptionalDependencies:
+  # PDF rendering runs in the browser; Node's native canvas is unnecessary.
+  - '@napi-rs/canvas'

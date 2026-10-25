@@ -13,10 +13,21 @@
 }
 .learning-layout { display: grid; grid-template-columns: minmax(240px, .72fr) minmax(0, 1fr); align-items: start; gap: clamp(36px, 5vw, 88px); max-width: 1280px; margin-inline: auto; position: relative; }
 .learning-body { min-width: 0; }
+.learning-layout > .learning-masthead { animation: learning-title-enter 340ms cubic-bezier(.22, 1, .36, 1) both; }
+.learning-layout > .learning-body { animation: learning-body-enter 380ms cubic-bezier(.22, 1, .36, 1) both; }
+.learning-class-list > button, .learning-quarter-list > button, .learning-content-row {
+  animation: learning-row-enter 360ms cubic-bezier(.22, 1, .36, 1) both;
+  animation-delay: calc(var(--learning-order, 0) * 35ms + 35ms);
+}
+.learning-resources > .learning-resource, .learning-quarter-trial { animation: learning-row-enter 420ms cubic-bezier(.22, 1, .36, 1) both; }
+.learning-resources > .learning-resource:nth-child(2) { animation-delay: 55ms; }
+@keyframes learning-title-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes learning-body-enter { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes learning-row-enter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
 .learning-editorial button { cursor: pointer; font: inherit; }
 .learning-editorial :is(button, input):focus-visible, .learning-theory button:focus-visible { outline: 2px solid #a1d4e7; outline-offset: 5px; }
 .learning-editorial svg, .learning-theory svg { width: 18px; height: 18px; stroke-width: 1.5; flex-shrink: 0; }
-.learning-masthead { position: sticky; top: 34px; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; padding: 7px 0 0; min-width: 0; text-shadow: 0 2px 24px #02050c; }
+.learning-masthead { position: sticky; top: calc(var(--site-header-height, 80px) + 24px); display: flex; flex-direction: column; align-items: flex-start; gap: 22px; padding: 7px 0 0; min-width: 0; text-shadow: 0 2px 24px #02050c; }
 .learning-masthead::after { content: ''; display: block; width: 52px; height: 1px; background: #a1d4e780; }
 .learning-eyebrow { font: 500 10px/1.6 'Manrope', Arial, sans-serif; text-transform: uppercase; letter-spacing: .16em; color: #a8b2c0; }
 .learning-masthead h1 { margin: 18px 0 0; font: 400 clamp(62px, 7.5vw, 110px)/.98 'Cormorant Garamond', Georgia, serif; font-variant-numeric: lining-nums; letter-spacing: -.035em; overflow-wrap: anywhere; }
@@ -28,11 +39,12 @@
 .learning-breadcrumbs [aria-current] { color: #e3e4e6; }
 .learning-breadcrumbs button:hover { color: var(--learning-accent); }
 .learning-index { padding-top: 0; }
-.learning-empty { padding-block: 36px; color: var(--learning-muted); font-size: 13px; }
 .learning-class-list { min-width: 0; }
 .learning-class-row { display: flex; align-items: center; width: 100%; gap: 22px; padding: 10px 2px 12px 0; text-align: left; border-bottom: 1px solid var(--learning-rule); }
+.learning-class-row, .learning-content-row { transition: background-color 180ms ease, color 180ms ease; }
+.learning-class-row:is(:hover, :focus-visible), .learning-content-row:is(:hover, :focus-visible) { background-color: #a1d4e707; }
 .learning-class-number { min-width: 54px; font: 400 52px/1 'Cormorant Garamond', Georgia, serif; font-variant-numeric: lining-nums; }
-.learning-class-copy { display: grid; gap: 3px; }
+.learning-class-copy { display: grid; min-width: 0; gap: 3px; }
 .learning-class-copy > span { font: 400 27px/1.2 'Cormorant Garamond', Georgia, serif; }
 .learning-class-copy small { font-size: 11px; font-weight: 400; color: var(--learning-muted); line-height: 1.7; }
 .learning-class-row > svg { margin-left: auto; width: 23px; height: 23px; color: #b5c7d1; transition: transform 180ms; }
@@ -40,13 +52,21 @@
 .learning-class-row:hover > svg { transform: translate(3px, -3px); }
 .learning-quarter-row { padding-block: 22px; }
 .learning-quarter-count { margin-left: auto; color: var(--learning-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.learning-quarter-row .learning-material-status + .learning-quarter-count { margin-left: 0; }
 .learning-quarter-row > svg { margin-left: 2px; }
 .learning-list-label { display: flex; justify-content: space-between; padding: 8px 0 16px; border-bottom: 1px solid var(--learning-rule); color: var(--learning-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
-.learning-content-row { display: flex; align-items: baseline; gap: 18px; width: 100%; padding: 19px 0; border-bottom: 1px solid var(--learning-rule); text-align: left; }
+.learning-content-row { display: flex; align-items: center; gap: 18px; width: 100%; padding: 19px 0; border-bottom: 1px solid var(--learning-rule); text-align: left; }
+.learning-section-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .learning-content-row > span:nth-child(2) { font: 400 27px/1.18 'Cormorant Garamond', Georgia, serif; }
 .learning-item-number { min-width: 20px; color: #8c9ba9; font-size: 10px; font-variant-numeric: tabular-nums; }
 .learning-section-code { min-width: 48px; white-space: nowrap; }
-.learning-content-row svg { margin-left: auto; width: 15px; color: #acbdcb; }
+.learning-content-row > svg { margin-left: 0; width: 15px; color: #acbdcb; }
+.learning-material-status { display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; min-width: 35px; margin-left: auto; flex-shrink: 0; }
+.learning-material-icon { display: inline-flex; align-items: center; }
+.learning-notes-icon { color: #a1d4e7; }
+.learning-trials-icon { color: #d0c5e8; }
+.learning-editorial .learning-material-icon > svg { width: 14px; height: 14px; stroke-width: 1.7; }
+.learning-material-description { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .learning-content-row:hover { color: var(--learning-accent); }
 .learning-lesson-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 30px; padding-top: 6px; }
 .learning-main-column { min-width: 0; }
@@ -112,4 +132,9 @@
   .learning-theory-overlay { padding: 14px; }
   .learning-theory { padding: 22px; max-height: calc(100svh - 28px); }
 }
-@media (prefers-reduced-motion: reduce) { .learning-class-row > svg { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .learning-layout > .learning-masthead, .learning-layout > .learning-body,
+  .learning-class-list > button, .learning-quarter-list > button, .learning-content-row,
+  .learning-resources > .learning-resource, .learning-quarter-trial { animation: none; }
+  .learning-class-row, .learning-content-row, .learning-class-row > svg { transition: none; }
+}

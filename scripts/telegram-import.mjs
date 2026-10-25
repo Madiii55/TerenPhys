@@ -17,12 +17,13 @@ async function run(outputDir) {
   if (Date.now() > expires) throw new Error('Import credential expired');
   const history = JSON.parse(await readFile(resolve(outputDir, 'public-history.json'), 'utf8'));
   if (history.channel !== 'nisphysicshub' || !history.public_history_complete) throw new Error('Incomplete or unexpected history');
-  const queue = history.posts.slice();
+  let nextPost = 0;
   let completed = 0, copied = 0;
   const failed = [];
   async function worker() {
-    while (queue.length) {
-      let batch = queue.splice(0, 5);
+    while (nextPost < history.posts.length) {
+      let batch = history.posts.slice(nextPost, nextPost + 5);
+      nextPost += batch.length;
       for (let attempt = 0; batch.length && attempt < 3; attempt++) {
         try {
           const response = await fetch(PROJECT_URL + '/functions/v1/telegram-import', {

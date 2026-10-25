@@ -73,7 +73,8 @@ export function mergeTelegramPosts(existing: readonly TelegramPost[], incoming: 
     const current = posts.get(post.message_id);
     if (!current || Date.parse(post.source_revision_at) >= Date.parse(current.source_revision_at)) posts.set(post.message_id, post);
   }
-  return [...posts.values()].sort((a,b) => Date.parse(b.published_at) - Date.parse(a.published_at) || b.message_id - a.message_id);
+  return [...posts.values()].map(post => ({ post, timestamp: Date.parse(post.published_at) }))
+    .sort((a,b) => b.timestamp - a.timestamp || b.post.message_id - a.post.message_id).map(({ post }) => post);
 }
 export function groupTelegramPosts(posts: readonly TelegramPost[]): TelegramPost[] {
   // HTML exports omit media_group_id. Only reconstruct an unambiguous batch:
@@ -113,7 +114,13 @@ export function groupTelegramPosts(posts: readonly TelegramPost[]): TelegramPost
     if (!group) { const copy = { ...post, attachments, grades }; groups.set(key,copy); result.push(copy); }
     else {
       group.grades = SCHOOL_GRADES.filter(grade => group.grades?.includes(grade) || grades.includes(grade));
-      group.attachments = [...group.attachments,...attachments].filter((item,index,all) => !item.path || all.findIndex(other => other.path === item.path) === index);
+      const paths = new Set<string>();
+      group.attachments = [...group.attachments,...attachments].filter(item => {
+        if (!item.path) return true;
+        if (paths.has(item.path)) return false;
+        paths.add(item.path);
+        return true;
+      });
       if (post.text && !group.text) { group.text = post.text; group.entities = post.entities; }
       group.message_id = Math.min(group.message_id, post.message_id);
     }

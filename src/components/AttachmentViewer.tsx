@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
@@ -6,6 +6,8 @@ import { supabaseUrl } from '../supabase.ts';
 import { telegramMediaUrl, type TelegramAttachment } from '../telegram/model.ts';
 import { attachmentFormat, attachmentPreviewKind, readPreviewBytes } from '../telegram/preview.ts';
 import '../styles/attachments.css';
+
+const DocumentPdfPreview = lazy(() => import('./DocumentPdfPreview.tsx'));
 
 export default function AttachmentViewer({ items, initialIndex, onClose }: {
   items: TelegramAttachment[]; initialIndex: number; onClose: () => void;
@@ -71,7 +73,7 @@ export default function AttachmentViewer({ items, initialIndex, onClose }: {
       <div className={'attachment-content attachment-content--' + kind}>
         {kind === 'docx' && !failed && (loading || documentUrl !== url) ? <div className="attachment-state" role="status"><span className="attachment-spinner" aria-hidden="true"/>{t('Открываем документ…')}</div>
           : failed || !url ? <div className="attachment-state" role="alert"><p>{t('Не удалось открыть предпросмотр. Можно скачать оригинал.')}</p></div>
-          : kind === 'pdf' ? <iframe key={url} src={url + '#view=FitH'} title={name} className="attachment-frame" referrerPolicy="no-referrer" onError={() => setFailedUrl(url)}/>
+          : kind === 'pdf' ? <Suspense fallback={<div className="attachment-state" role="status">{t('Открываем документ…')}</div>}><DocumentPdfPreview key={url} url={url} title={name}/></Suspense>
           : kind === 'docx' && documentHtml && documentUrl === url ? <iframe key={url} srcDoc={documentHtml} sandbox="allow-same-origin" title={name} className="attachment-frame" referrerPolicy="no-referrer"
             onLoad={event => { event.currentTarget.contentDocument?.addEventListener('keydown', key => { if (key.key === 'Escape') onClose(); if (key.key === 'Tab') { key.preventDefault(); closeButton.current?.focus(); } }); }}/>
           : kind === 'image' ? <img src={url} alt={name} onError={() => setFailedUrl(url)}/>

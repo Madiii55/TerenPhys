@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CameraFlight, smoothRange, type CameraView } from '../src/graphics/cameraFlight.ts';
 import { cosmicVisibility, GALAXY_SCALE, GALAXY_SHAPE, HOME_DISTANCE, ORBIT_DURATION, ZOOM_DURATION } from '../src/graphics/cosmicScale.ts';
+import { CAMERA_ROLL_END_DISTANCE, CAMERA_ROLL_START_DISTANCE, cosmicCameraOrientation } from '../src/graphics/orientation.ts';
 
 const home: CameraView = { distance: HOME_DISTANCE, polar: 1.42, azimuth: 0.16, panX: 0.205, panY: 0.015 };
 const galaxy: CameraView = { distance: 89 * GALAXY_SCALE, polar: 0.94, azimuth: -1.65, panX: 0, panY: 0 };
@@ -78,15 +79,16 @@ test('the elongated galaxy stays much larger than the unchanged near-hole scale'
   assert.ok(13.6 / (120 * GALAXY_SCALE) < 0.0001);
 });
 
-test('the cubic middle traverses thousands of times the distance in a short flight', () => {
+test('the flight spans the full galaxy scale within the quicker bounded duration', () => {
   const flight = new CameraFlight(home);
   flight.retarget(galaxy, 0, ZOOM_DURATION);
   const ratio = flight.read(ZOOM_DURATION * 0.75).distance / flight.read(ZOOM_DURATION * 0.25).distance;
-  assert.ok(ratio > 7000);
-  assert.ok(ZOOM_DURATION <= 1.6);
+  assert.ok(ratio > 3000);
+  assert.ok(ZOOM_DURATION >= 1.5 && ZOOM_DURATION <= 1.7);
+  assert.ok(ORBIT_DURATION >= 1 && ORBIT_DURATION <= 1.3);
 });
 
-test('model handover takes under 120 ms, deep inside the nucleus, in both directions', () => {
+test('the detail handover overlaps a visible nuclear cluster in both directions', () => {
   for (const [from, to] of [[home, galaxy], [galaxy, home]]) {
     const flight = new CameraFlight(from);
     flight.retarget(to, 0, ZOOM_DURATION);
@@ -98,11 +100,15 @@ test('model handover takes under 120 ms, deep inside the nucleus, in both direct
         samples.push(time);
         near(visibility.disk, 0);
         near(visibility.cluster, 0);
-        assert.ok(Math.abs(flight.logDistanceSpeed(time)) > 10);
+        assert.ok(visibility.nucleus > .9);
+        // Keep the same eased trajectory while its overall duration is shorter.
+        assert.ok(Math.abs(flight.logDistanceSpeed(time)) * ZOOM_DURATION < 21.45);
       }
     }
     assert.ok(samples.length > 0);
-    assert.ok(samples.at(-1)! - samples[0] < 0.12);
+    // The handover still spans at least eight frames at 60 FPS.
+    assert.ok(samples.at(-1)! - samples[0] > 8 / 60);
+    assert.ok(samples.at(-1)! - samples[0] < 0.6);
   }
   near(cosmicVisibility(home.distance).detail, 1);
   near(cosmicVisibility(galaxy.distance).detail, 0);
@@ -138,7 +144,7 @@ test('detail crossfade is bounded and has smooth endpoints', () => {
   }
 });
 
-test('cubic zoom has one symmetric velocity peak without a pause in its middle', () => {
+test('quintic zoom has one symmetric velocity peak and continuous acceleration', () => {
   for (const [from, to] of [[home, galaxy], [galaxy, home]]) {
     const flight = new CameraFlight(from);
     flight.retarget(to, 0, ZOOM_DURATION);
@@ -150,13 +156,19 @@ test('cubic zoom has one symmetric velocity peak without a pause in its middle',
       previous = speed;
     }
     const range = Math.log(to.distance) - Math.log(from.distance);
-    near(flight.logDistanceSpeed(ZOOM_DURATION / 2), range * 3 / ZOOM_DURATION);
-    near((Math.log(flight.read(ZOOM_DURATION / 4).distance) - Math.log(from.distance)) / range, 0.0625);
-    near((Math.log(flight.read(ZOOM_DURATION * 3 / 4).distance) - Math.log(from.distance)) / range, 0.9375);
+    near(flight.logDistanceSpeed(ZOOM_DURATION / 2), range * 1.875 / ZOOM_DURATION);
+    near((Math.log(flight.read(ZOOM_DURATION / 4).distance) - Math.log(from.distance)) / range, 0.103515625);
+    near((Math.log(flight.read(ZOOM_DURATION * 3 / 4).distance) - Math.log(from.distance)) / range, 0.896484375);
+    const epsilon = 0.00001;
+    for (const time of [0, ZOOM_DURATION / 2, ZOOM_DURATION]) {
+      const left = (flight.logDistanceSpeed(time) - flight.logDistanceSpeed(time - epsilon)) / epsilon;
+      const right = (flight.logDistanceSpeed(time + epsilon) - flight.logDistanceSpeed(time)) / epsilon;
+      near(left, right, .002);
+    }
   }
 });
 
-test('content completion is available only after the actual camera flight ends', () => {
+test('camera completion is available only after the actual flight ends', () => {
   const flight = new CameraFlight(home);
   assert.ok(flight.isSettled(0));
   flight.retarget(galaxy, 0.4, ZOOM_DURATION);
@@ -167,10 +179,85 @@ test('content completion is available only after the actual camera flight ends',
   assert.ok(flight.isSettled(3));
 });
 
-test('an interrupted flight cannot reveal content using the old completion time', () => {
+test('an interrupted flight cannot report completion at the old arrival time', () => {
   const flight = new CameraFlight(home);
   flight.retarget(galaxy, 0, ZOOM_DURATION);
   flight.retarget(home, 0.9, ZOOM_DURATION);
   assert.equal(flight.isSettled(ZOOM_DURATION), false);
   assert.ok(flight.isSettled(0.9 + ZOOM_DURATION));
+});
+
+test('rendered orientation preserves endpoint views without the abrupt near-hole roll', () => {
+  near(cosmicCameraOrientation(home).roll, -0.24);
+  near(cosmicCameraOrientation({ ...home, distance: home.distance * 1.3 }).roll, -0.24);
+  near(cosmicCameraOrientation(galaxy).roll, 0.34);
+  for (const [from, to] of [[home, galaxy], [galaxy, home]]) {
+    const flight = new CameraFlight(from);
+    flight.retarget(to, 0, ZOOM_DURATION);
+    let previous = cosmicCameraOrientation(from);
+    for (let time = 1 / 60; time <= ZOOM_DURATION; time += 1 / 60) {
+      const view = flight.read(time);
+      const actual = cosmicCameraOrientation(view);
+      near(actual.polar, view.polar);
+      near(actual.azimuth, view.azimuth);
+      assert.ok(actual.roll >= -0.24 && actual.roll <= 0.340000001);
+      assert.ok(Math.abs(actual.polar - previous.polar) < .01);
+      assert.ok(Math.abs(actual.azimuth - previous.azimuth) < .035);
+      assert.ok(Math.abs(actual.roll - previous.roll) < .028);
+      if (view.distance < 90) {
+        // While full BH detail is visible, roll cannot snap across the old
+        // 32–72 handover: at 60 FPS its step stays below one fifth of a degree.
+        assert.ok(Math.abs(actual.roll - previous.roll) < .0035);
+      }
+      previous = actual;
+    }
+  }
+});
+
+test('rendered orientation preserves velocity through retargets and azimuth seams', () => {
+  const orientationKeys = ['polar', 'azimuth', 'roll'] as const;
+  const epsilon = .000001;
+  for (const fromAzimuth of [home.azimuth, Math.PI + home.azimuth - .1]) {
+    const from = { ...home, azimuth: fromAzimuth };
+    const flight = new CameraFlight(from);
+    flight.retarget({ ...galaxy, azimuth: fromAzimuth + .3 }, 0, ZOOM_DURATION);
+    // At this time the orbital branch crosses home+PI. A distance-dependent
+    // blend of a wrapped home angle would jump; the actual camera must not.
+    const changedAt = ZOOM_DURATION * .45;
+    let incoming = cosmicCameraOrientation(from);
+    for (let time = 1 / 60; time < changedAt; time += 1 / 60) {
+      const actual = cosmicCameraOrientation(flight.read(time));
+      assert.ok(Math.abs(actual.azimuth - incoming.azimuth) < .006);
+      incoming = actual;
+    }
+    const before = cosmicCameraOrientation(flight.read(changedAt - epsilon));
+    const at = cosmicCameraOrientation(flight.read(changedAt));
+    flight.retarget(home, changedAt, ZOOM_DURATION);
+    const after = cosmicCameraOrientation(flight.read(changedAt + epsilon));
+    orientationKeys.forEach(key => {
+      near(cosmicCameraOrientation(flight.read(changedAt))[key], at[key]);
+      const velocityBefore = (at[key] - before[key]) / epsilon;
+      const velocityAfter = (after[key] - at[key]) / epsilon;
+      near(velocityBefore, velocityAfter, .003);
+    });
+    let previous = after;
+    for (let time = changedAt + 1 / 60; time <= changedAt + ZOOM_DURATION; time += 1 / 60) {
+      const actual = cosmicCameraOrientation(flight.read(time));
+      orientationKeys.forEach(key => {
+        assert.ok(Number.isFinite(actual[key]));
+        assert.ok(Math.abs(actual[key] - previous[key]) < .08, `${key} snapped at ${time}`);
+      });
+      previous = actual;
+    }
+  }
+});
+
+test('roll is continuous with zero velocity at both scale boundaries', () => {
+  const roll = (distance: number) => cosmicCameraOrientation({ ...home, distance }).roll;
+  const epsilon = .000001;
+  for (const boundary of [CAMERA_ROLL_START_DISTANCE, CAMERA_ROLL_END_DISTANCE]) {
+    const at = roll(boundary);
+    near((at - roll(boundary * Math.exp(-epsilon))) / epsilon, 0, .000001);
+    near((roll(boundary * Math.exp(epsilon)) - at) / epsilon, 0, .000001);
+  }
 });

@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
-import { createRoot } from 'react-dom/client';
 import type { AuthContextType } from '../src/context/AuthContext.tsx';
 import { clearRecovery, emailCooldown, matchesRecovery, rememberEmailSend, rememberRecovery, restoredRecovery, sessionIdentifier } from '../src/auth/browserState.ts';
 import { oauthReturnUrl } from '../src/auth/localOrigin.ts';
@@ -76,7 +75,7 @@ function components() {
   return compiledPromise ??= (async () => {
     const result = await build({
       stdin: { contents: `export { AuthProvider, useAuth } from './src/context/AuthContext.tsx'; export { installMock } from './src/supabase.ts'; export { AuthModal } from './src/components/AuthModal.tsx'; export { EmailActionPage } from './src/components/EmailActionPage.tsx'; export { Navbar } from './src/components/Navbar.tsx';`, resolveDir: fileURLToPath(new URL('..', import.meta.url)) },
-      bundle: true, write: false, platform: 'node', format: 'cjs', external: ['react', 'react/*', 'react-dom', 'react-dom/*'],
+      bundle: true, write: false, platform: 'node', format: 'cjs', external: ['react', 'react/*', 'react-dom', 'react-dom/*'], loader: { '.css': 'empty' },
       define: { 'import.meta.env.VITE_PUBLIC_SITE_URL': 'undefined' },
       plugins: [{ name: 'isolated-auth-sdk', setup(builder) {
         builder.onLoad({ filter: /[\\/]src[\\/]supabase\.ts$/ }, () => ({ loader: 'js', contents: `export let supabase; export function installMock(value) { supabase = value; } export function avatarUrl() { return undefined; } export async function googleProviderEnabled() { return supabase.googleEnabled; }` }));
@@ -119,6 +118,7 @@ async function harness(initialId: string | null, initialStorage?: ReturnType<typ
   ui.installMock(sdk);
   let context!: AuthContextType;
   const Probe = () => { context = ui.useAuth(); return null; };
+  const { createRoot } = await import('react-dom/client');
   const root = createRoot(dom.window.document.getElementById('root')!);
   const render = async (child?: React.ReactNode) => { await act(async () => {
     const provider = React.createElement(ui.AuthProvider, null, React.createElement(Probe), child);

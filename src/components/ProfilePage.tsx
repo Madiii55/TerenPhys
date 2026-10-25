@@ -8,7 +8,6 @@ import { GoogleIcon } from './GoogleIcon.tsx';
 
 interface ProfilePageProps {
   onOpenAuth: (mode: 'login' | 'register') => void;
-  onNavigateStudy?: () => void;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenAuth }) => {
@@ -27,18 +26,21 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenAuth }) => {
   }, [user?.id]);
 
   const signInWithGoogle = async () => {
-    setBusy(true); setError('');
+    if (busy) return;
+    setBusy(true); setError(''); setNotice('');
     try {
       const result = await loginWithGoogle();
       if (!result.success && !result.needsVerification && result.error !== 'Вход через Google отменён.') setError(result.error || 'Не удалось войти через Google.');
     } finally { setBusy(false); }
   };
   const beginEdit = () => {
-    if (!user) return;
+    if (!user || busy) return;
     setNickname(user.name); setBio(user.bio); setError(''); setNotice(''); setEditing(true);
   };
   const save = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setBusy(true); setError('');
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true); setError(''); setNotice('');
     try {
       const result = await updateProfile({ name: nickname, bio });
       if (result.success) { setEditing(false); setNotice('Изменения сохранены.'); }
@@ -48,8 +50,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenAuth }) => {
   const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file) return;
-    setBusy(true); setError('');
+    if (!file || busy) return;
+    setBusy(true); setError(''); setNotice('');
     try {
       const avatarUrl = await compressAvatarImage(file, 256, 0.8);
       const result = await updateProfile({ avatarUrl });
@@ -59,13 +61,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenAuth }) => {
     finally { setBusy(false); }
   };
   const leave = async () => {
-    setBusy(true);
+    if (busy) return;
+    setBusy(true); setError(''); setNotice('');
     try { await logout(); setEditing(false); setNotice(''); }
     catch { setError('Не удалось выйти. Попробуйте ещё раз.'); }
     finally { setBusy(false); }
   };
   const retry = async () => {
-    setBusy(true); setError('');
+    if (busy) return;
+    setBusy(true); setError(''); setNotice('');
     try { const result = await retryProfile(); if (!result.success && result.error) setError(result.error); }
     finally { setBusy(false); }
   };
@@ -92,17 +96,17 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenAuth }) => {
         </section> : <section className="profile-member">
           <aside className="profile-photo-column">
             <div className="profile-avatar">{user.avatarUrl ? <img src={user.avatarUrl} alt={t('Аватар {name}', { name: user.name })} /> : <span aria-label={t("Аватар пока не загружен")}>{user.name.charAt(0).toUpperCase()}</span>}</div>
-            <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadAvatar} className="hidden" aria-label={t("Фотография профиля")} />
+            <input ref={fileInputRef} type="file" disabled={busy} accept="image/png,image/jpeg,image/webp" onChange={uploadAvatar} className="hidden" aria-label={t("Фотография профиля")} />
             <button type="button" className="account-link" disabled={busy} onClick={() => fileInputRef.current?.click()}>{t("Изменить фото")}</button>
           </aside>
           <div className="profile-details">
-            {editing ? <form onSubmit={save} className="profile-edit-form">
+            {editing ? <form onSubmit={save} className="profile-edit-form" aria-busy={busy}>
               <h1>{t("Редактирование профиля")}</h1>
-              <label className="account-field">{t("Никнейм")}<input autoComplete="nickname" required minLength={2} maxLength={40} value={nickname} onChange={event => setNickname(event.target.value)} /></label>
-              <label className="account-field">{t("Описание")}<textarea maxLength={300} rows={4} value={bio} onChange={event => setBio(event.target.value)} placeholder={t("Чем вы увлекаетесь?")} /><span className="account-caption">{bio.length} / 300</span></label>
+              <label className="account-field">{t("Никнейм")}<input disabled={busy} autoComplete="nickname" required minLength={2} maxLength={40} value={nickname} onChange={event => setNickname(event.target.value)} /></label>
+              <label className="account-field">{t("Описание")}<textarea disabled={busy} maxLength={300} rows={4} value={bio} onChange={event => setBio(event.target.value)} placeholder={t("Чем вы увлекаетесь?")} /><span className="account-caption">{bio.length} / 300</span></label>
               <div className="account-actions"><button type="submit" className="account-button account-button-primary" disabled={busy}>{busy ? t("Сохраняем…") : t("Сохранить")}</button><button type="button" className="account-link" disabled={busy} onClick={() => setEditing(false)}>{t("Отмена")}</button></div>
             </form> : <>
-              <div className="profile-name-row"><h1>{user.name}</h1><button type="button" className="account-link" onClick={beginEdit}>{t("Редактировать")}</button></div>
+              <div className="profile-name-row"><h1>{user.name}</h1><button type="button" disabled={busy} className="account-link" onClick={beginEdit}>{t("Редактировать")}</button></div>
               <p className="profile-email">{user.email}</p>
               <div className="profile-about"><h2>{t("О себе")}</h2><p>{user.bio || t("Здесь пока нет описания.")}</p>{!user.bio && <button type="button" className="account-link" onClick={beginEdit}>{t("Добавить описание")}</button>}</div>
             </>}

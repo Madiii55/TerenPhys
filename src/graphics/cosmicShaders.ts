@@ -325,6 +325,7 @@ export function blackHoleFragment(steps: number) {
     const float EXTINCTION = ${ACCRETION_DISK.extinction.toFixed(4)};
     const float LARGE_CLUMP_DENSITY = ${ACCRETION_DISK.largeClumpDensity.toFixed(4)};
     const float OVERLAPPING_CLUMP_DENSITY = ${ACCRETION_DISK.overlappingClumpDensity.toFixed(4)};
+    const float SPIN_DIRECTION = ${ACCRETION_DISK.spinDirection.toFixed(1)};
     ${noiseGLSL}
 
     vec3 acceleration(vec3 p, float angularMomentumSq) {
@@ -333,19 +334,19 @@ export function blackHoleFragment(steps: number) {
     }
 
     float orbitalRate(float radius) {
-      return 0.65 + 1.65 * pow(INNER / max(radius, INNER), 1.4);
+      return SPIN_DIRECTION * ${ACCRETION_DISK.innerOrbitalRate.toFixed(4)} * pow(INNER / max(radius, INNER), 1.5);
     }
 
     float diskHeight(vec2 p) {
       float r = length(p);
-      float flow = atan(p.y, p.x) - uTime * 0.85;
+      float flow = atan(p.y, p.x) - uTime * 0.16 * SPIN_DIRECTION;
       float outerWarp = smoothstep(INNER + 0.25, OUTER, r);
       return outerWarp * (0.045 * sin(flow * 2.0 + r * 0.6)
         + 0.025 * sin(flow * 3.0 - r * 1.1));
     }
 
     float outerEdge(float flow) {
-      return OUTER - 0.55 + 0.38 * sin(flow * 2.0 + 0.6) + 0.24 * sin(flow * 5.0);
+      return OUTER - 0.28 + 0.17 * sin(flow * 2.0 + 0.6) + 0.1 * sin(flow * 5.0);
     }
 
     // Analytic ellipsoidal particle in each occupied spatial cell. Its entire
@@ -383,17 +384,35 @@ export function blackHoleFragment(steps: number) {
       vec2 large = particleCloud(largePosition, 5.7);
       vec2 overlapping = particleCloud(largePosition + vec3(0.5, 0.45, 0.5), 17.3);
       vec2 small = particleCloud(cellSpace * 3.1 + offset * 0.71 + 7.3, 29.4);
-      ${steps >= 192 ? 'vec2 micro = particleCloud(cellSpace * 8.3 + offset * 1.3 + 3.1, 71.9);' : 'vec2 micro = vec2(0.0);'}
+      ${steps >= 256 ? 'vec2 micro = particleCloud(cellSpace * 8.3 + offset * 1.3 + 3.1, 71.9);' : 'vec2 micro = vec2(0.0);'}
       float wisps = 0.5 + 0.5 * sin(flow * 7.0 + r * 2.1 + advected.y * 8.0);
       float billow = pow(smoothstep(0.3, 0.72, noise3(cellSpace * 1.9 + offset * 0.3)), 2.0);
       // Large clouds are a faint density variation, not solid, brightly lit
       // lumps. Keep the fine particles and the absorbing continuous layer.
-      float density = 0.29 + large.x * LARGE_CLUMP_DENSITY + overlapping.x * OVERLAPPING_CLUMP_DENSITY + small.x * 2.0
+      float density = 0.22 + large.x * LARGE_CLUMP_DENSITY + overlapping.x * OVERLAPPING_CLUMP_DENSITY + small.x * 0.65
         + billow * 0.45 + micro.x * 0.12 + wisps * 0.03;
       float shading = (0.038 + large.x * LARGE_CLUMP_DENSITY * (0.18 + 0.15 * large.y)
         + overlapping.x * OVERLAPPING_CLUMP_DENSITY * (0.18 + 0.15 * overlapping.y)
-        + small.x * small.y * 2.0 + billow * 0.14) / max(density, 0.001);
+        + small.x * small.y * 0.65 + billow * 0.14) / max(density, 0.001);
       return vec3(density, clamp(shading, 0.12, 1.0), micro.x * micro.x);
+    }
+
+    // Long, sheared plasma lanes. The angular coordinate is embedded on a
+    // circle, so the rotating flow has no seam at atan's -PI/PI boundary.
+    // Different populations crossfade before differential rotation can wind
+    // their filaments into an unresolved, flickering comb.
+    vec2 plasmaLanes(float r, float angle, float height, float age, float seed) {
+      float flow = angle - age * orbitalRate(r);
+      float radius = log(r / INNER);
+      vec3 coordinate = vec3(cos(flow) * 2.4, sin(flow) * 2.4, radius * 8.0);
+      coordinate += vec3(mod(seed, 127.0) * 0.73, 0.0, height * 2.5);
+      float eddy = noise3(coordinate);
+      float fine = noise3(coordinate * vec3(1.7, 1.7, 3.6) + 5.2);
+      float streak = sin(radius * 92.0 + sin(flow * 3.0 + radius * 5.0) * 1.6 + eddy * 5.0);
+      float threads = pow(0.5 + 0.5 * streak, 5.0);
+      float breaks = smoothstep(0.22, 0.76, fine);
+      float lanes = smoothstep(0.27, 0.78, eddy * 0.68 + fine * 0.32);
+      return vec2(0.3 + lanes * 0.9 + threads * breaks * 0.75, threads * breaks);
     }
 
     void sampleAccretion(vec3 p, vec3 direction, out float density, out vec3 source) {
@@ -418,26 +437,23 @@ export function blackHoleFragment(steps: number) {
       vec3 older = matterField(cloudPosition, uMatterAges.x, uMatterSeeds.x);
       vec3 younger = matterField(cloudPosition, uMatterAges.y, uMatterSeeds.y);
       vec3 matter = mix(older, younger, uMatterMix);
-      density = matter.x * radial * vertical * pow(INNER / r, 0.35);
+      vec2 lanes = mix(plasmaLanes(r, angle, height, uMatterAges.x, uMatterSeeds.x),
+        plasmaLanes(r, angle, height, uMatterAges.y, uMatterSeeds.y), uMatterMix);
+      density = matter.x * lanes.x * radial * vertical * pow(INNER / r, 0.35);
       float heat = pow(INNER / r, 0.75);
-      vec3 color = mix(vec3(1.25, 0.12, 0.018), vec3(3.8, 1.35, 0.24), smoothstep(0.3, 0.75, heat));
-      color = mix(color, vec3(6.0, 5.0, 3.7), smoothstep(0.75, 1.0, heat));
-      vec3 orbitalDirection = normalize(vec3(-p.z, 0.0, p.x));
-      float beta = 0.28 * sqrt(INNER / r);
-      float doppler = pow(1.0 / (1.0 + beta * dot(orbitalDirection, normalize(direction))), 2.6);
-      float redshift = sqrt(max(1.0 - RS / r, 0.0));
-      // Differentially advected filaments sharpen the hot flow without adding
-      // bulky clouds or a fake ring above the foreground volume.
-      float flow = angle - uTime * orbitalRate(r);
-      float turbulence = noise3(vec3(cos(flow) * r * 3.0, sin(flow) * r * 3.0, height * 12.0));
-      float fine = noise3(vec3(cos(flow) * r * 10.0, sin(flow) * r * 10.0, height * 26.0));
-      float filament = pow(0.5 + 0.5 * sin(r * 22.0 + flow * 3.0 + turbulence * 9.0), 4.0)
-        * smoothstep(0.18, 0.72, fine);
-      // Broken, sheared streams and cooler gaps avoid perfectly concentric
-      // painted rings; the hottest inner flow approaches a white thermal glow.
-      float emission = (0.24 + matter.y * 0.95) * (0.62 + turbulence * 0.56 + filament * 0.6 + fine * 0.12);
-      source = color * pow(INNER / r, 1.05) * redshift * doppler * emission;
-      source += vec3(2.6, 1.4, 0.55) * matter.z * heat * 0.55;
+      vec3 orbitalDirection = SPIN_DIRECTION * normalize(vec3(-p.z, 0.0, p.x));
+      // Circular-orbit speed measured by a local static observer. Combining
+      // its Lorentz factor with gravitational redshift gives the observed
+      // frequency ratio; g^3 transports specific intensity along the ray.
+      float beta = sqrt(RS / (2.0 * max(r - RS, RS)));
+      float frequencyShift = sqrt(max(1.0 - RS / r, 0.0)) * sqrt(1.0 - beta * beta)
+        / (1.0 + beta * dot(orbitalDirection, normalize(direction)));
+      float observedHeat = heat * pow(frequencyShift, 0.35);
+      vec3 color = mix(vec3(1.8, 0.19, 0.025), vec3(4.6, 1.95, 0.5), smoothstep(0.3, 0.72, observedHeat));
+      color = mix(color, vec3(6.7, 6.0, 4.8), smoothstep(0.72, 1.08, observedHeat));
+      float emission = (0.34 + matter.y * 0.35) * (0.6 + lanes.x * 0.5 + lanes.y * 0.9);
+      source = color * pow(INNER / r, 1.25) * pow(frequencyShift, 3.0) * emission;
+      source += vec3(2.2, 1.2, 0.45) * matter.z * heat * 0.25;
     }
 
     void main() {
@@ -453,19 +469,19 @@ export function blackHoleFragment(steps: number) {
       vec3 velocity = ray;
       vec3 light = vec3(0.0);
       float transmission = 1.0;
-      bool captured = false, opaque = false;
+      bool captured = false, opaque = false, escaped = false;
       for (int i = 0; i < ${steps}; i++) {
         float r = length(p);
         if (r < RS * 1.025) { captured = true; break; }
-        if (r > 11.1 && dot(p, velocity) > 0.0) break;
-        float dt = clamp(r * 0.085, 0.018, 0.75);
+        if (r > 11.1 && dot(p, velocity) > 0.0) { escaped = true; break; }
+        float dt = clamp(r * 0.065, 0.014, 0.65);
         vec3 local = uDiskFrame * p;
         float diskRadius = length(local.xz);
         float thickness = mix(${ACCRETION_DISK.innerThickness.toFixed(4)}, ${ACCRETION_DISK.outerThickness.toFixed(4)}, smoothstep(INNER, OUTER, diskRadius));
         if (diskRadius > INNER - 0.2 && diskRadius < OUTER + 0.2
             && abs(local.y) < ${(ACCRETION_DISK.outerThickness * 2.5 + 0.171).toFixed(4)}
             && abs(local.y - diskHeight(local.xz)) < thickness * 2.5 + 0.1) {
-          dt = min(dt, ${steps >= 192 ? '0.13' : '0.18'});
+          dt = min(dt, ${steps >= 256 ? '0.095' : '0.14'});
         }
         vec3 halfVelocity = velocity + acceleration(p, h2) * dt * 0.5;
         vec3 next = p + halfVelocity * dt;
@@ -482,7 +498,9 @@ export function blackHoleFragment(steps: number) {
         if (transmission < ${ACCRETION_DISK.minimumTransmission.toFixed(4)}) { opaque = true; break; }
         p = next;
       }
-      if (!captured && !opaque) {
+      // Near-critical rays can still be orbiting when the step budget ends.
+      // Only an escaped ray may reveal the sky: exhaustion is not escape.
+      if (!captured && !opaque && escaped) {
         vec4 projected = uViewProjection * vec4(uCameraPosition + normalize(velocity) * 450.0, 1.0);
         vec2 bentUv = projected.xy / projected.w * 0.5 + 0.5;
         // The local galaxy is not an infinitely distant environment map.

@@ -1,0 +1,66 @@
+.home-copy .home-word {
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  translate: var(--avoid-x, 0px) var(--avoid-y, 0px);
+}
+
+.home-telegram {
+  position: relative;
+  padding-block: 8px;
+  isolation: isolate;
+}
+.home-telegram-badge {
+  position: relative;
+  transition: background-color 650ms ease;
+}
+.home-telegram-badge::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 1px solid #7dd3fc55;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 650ms ease;
+}
+.home-telegram-plane {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  color: white;
+  pointer-events: none;
+  z-index: 1;
+}
+.home-telegram-plane > svg { display: block; width: 100%; height: 100%; }
+.home-telegram::after {
+  content: '';
+  position: absolute;
+  left: 58px;
+  right: 27px;
+  bottom: 7px;
+  height: 1px;
+  background: linear-gradient(90deg, #38bdf8, #b9eaff);
+  transform-origin: left;
+  transform: scaleX(0);
+  opacity: .65;
+  transition: transform 750ms cubic-bezier(.4, 0, .2, 1);
+}
+.home-telegram-arrow { transition: transform 650ms cubic-bezier(.4, 0, .2, 1); }
+.home-telegram-label { transition: color 550ms ease; }
+.home-telegram:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 8px; border-radius: 4px; }
+.home-telegram:focus-visible .home-telegram-label { color: #7dd3fc; }
+@media (hover: hover) and (pointer: fine) {
+  .home-telegram:hover .home-telegram-badge { background-color: #1599ce; }
+  .home-telegram:hover .home-telegram-badge::before { opacity: 1; }
+  .home-telegram:hover .home-telegram-label { color: #7dd3fc; }
+  .home-telegram:hover .home-telegram-arrow { transform: translateX(3px); }
+  .home-telegram:hover::after { transform: scaleX(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-copy .home-word { translate: none !important; }
+  .home-telegram-badge, .home-telegram-badge::before, .home-telegram-arrow,
+  .home-telegram-label, .home-telegram::after { transition: none; transform: none !important; }
+}

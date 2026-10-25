@@ -178,7 +178,11 @@ test('Telegram rendering escapes markup, rejects unsafe links and preserves sour
   const result = await build({ stdin: { contents: "export { TelegramText, TelegramEntry } from './src/components/TelegramFeed.tsx'; export { telegramCursorFilter } from './src/telegram/api.ts';",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)), sourcefile: 'telegram-render.ts' },
     bundle: true, write: false, platform: 'node', format: 'cjs', external: ['react', 'react-dom', 'react-dom/*'], loader: { '.css': 'empty' },
-    plugins: [{ name: 'isolated-telegram', setup(builder) { builder.onLoad({ filter: /[\\/]src[\\/]supabase\.ts$/ }, () => ({ contents: 'export const supabase = {}; export const supabaseUrl = "https://example.supabase.co";', loader: 'ts' })); } }],
+    plugins: [{ name: 'isolated-telegram', setup(builder) {
+      builder.onLoad({ filter: /[\\/]src[\\/]supabase\.ts$/ }, () => ({ contents: 'export const supabase = {}; export const supabaseUrl = "https://example.supabase.co";', loader: 'ts' }));
+      builder.onResolve({ filter: /pdf\.worker\.mjs\?url$/ }, () => ({ path:'worker',namespace:'worker-url-test' }));
+      builder.onLoad({ filter:/.*/,namespace:'worker-url-test' }, () => ({ contents:'export default "/test-pdf-worker.mjs";',loader:'js' }));
+    } }],
   });
   const compiled: { exports: any } = { exports: {} };
   new Function('require', 'module', 'exports', result.outputFiles[0].text)(createRequire(import.meta.url), compiled, compiled.exports);

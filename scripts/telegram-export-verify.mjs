@@ -29,10 +29,10 @@ for (const post of manifest.posts) {
   }
 }
 const unique = [...new Map(media.map(item => [item.path, item])).values()];
-const queue = unique.slice(); let checked = 0;
+let nextMedia = 0, checked = 0;
 async function worker() {
-  while (queue.length) {
-    const item = queue.shift(), url = base + '/storage/v1/object/public/telegram-media/' + item.path;
+  while (nextMedia < unique.length) {
+    const item = unique[nextMedia++], url = base + '/storage/v1/object/public/telegram-media/' + item.path;
     const head = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(30000) });
     assert.equal(head.status, 200); assert.equal(head.headers.get('content-type')?.split(';')[0], item.mime);
     if (head.headers.has('content-length')) assert.equal(Number(head.headers.get('content-length')), item.size);

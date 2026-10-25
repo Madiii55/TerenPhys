@@ -1,4 +1,5 @@
 import { isSchoolGrade } from '../learning/catalogue.ts';
+import { createDateFormatter, createNumberFormatter } from '../i18n/formatters.ts';
 
 export const FORUM_CATEGORIES = [
   { id: 'mechanics', label: 'Механика', symbol: '01' },
@@ -33,12 +34,14 @@ export function validateTopic(draft: TopicDraft): string | null {
   if (!FORUM_CATEGORIES.some(c => c.id === draft.category)) return 'Выберите раздел.';
   return null;
 }
-export const formatForumDate = (value: string, locale = 'ru-RU') => new Intl.DateTimeFormat(locale, {
+const formatDate = createDateFormatter({
   day: 'numeric', month: 'short', year: 'numeric',
-}).format(new Date(value));
-export const formatForumNumber = (value: number, locale = 'ru-RU') => new Intl.NumberFormat(locale, {
-  notation: value >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1,
-}).format(value);
+});
+const formatStandardNumber = createNumberFormatter({ maximumFractionDigits: 1 });
+const formatCompactNumber = createNumberFormatter({ notation: 'compact', maximumFractionDigits: 1 });
+export const formatForumDate = (value: string, locale = 'ru-RU') => formatDate(new Date(value), locale);
+export const formatForumNumber = (value: number, locale = 'ru-RU') =>
+  (value >= 10000 ? formatCompactNumber : formatStandardNumber)(value, locale);
 export function forumCount(value: number, forms: readonly [string,string,string], locale = 'ru-RU'): string {
   const tens = value % 100, units = value % 10;
   const word = locale === 'kk-KZ' ? forms[0] : value >= 10000 || (tens >= 11 && tens <= 14) ? forms[2]

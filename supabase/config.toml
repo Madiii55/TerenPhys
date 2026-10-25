@@ -10,3 +10,7 @@ verify_jwt = false
 
 [functions.telegram-setup]
 verify_jwt = false
+
+# Only signed-in callers; the handler also remotely verifies getUser and email confirmation.
+[functions.einstein-assistant]
+verify_jwt = true

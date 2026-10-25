@@ -1,5 +1,5 @@
 // Isolated UI fixture. Not imported by the app or included in its production build.
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AuthContext, type AuthContextType, type UserProfile } from '../../src/context/AuthContext.tsx';
 import { ProfilePage } from '../../src/components/ProfilePage.tsx';

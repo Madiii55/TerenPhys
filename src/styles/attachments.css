@@ -6,6 +6,7 @@
 .attachment-title h2 { font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .attachment-tools { display:flex; align-items:center; gap:22px; flex-shrink:0; }
 .attachment-tools button,.attachment-navigation button { cursor:pointer; padding:8px; }
+.attachment-tools button,.attachment-navigation > button,.study-pdf-toolbar button,.attachment-download { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; flex-shrink:0; }
 .attachment-viewer svg { width:18px; height:18px; stroke-width:1.5; }
 .attachment-viewer :is(button,a):focus-visible { outline:2px solid #a1d4e7; outline-offset:3px; }
 .attachment-viewer :is(button,a):hover { color:#a1d4e7; }
@@ -25,6 +26,16 @@
 .attachment-state { display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:18px; padding:24px; color:#c0cbd6; }
 .attachment-spinner { width:18px; height:18px; border:1px solid #a1d4e745; border-top-color:#a1d4e7; border-radius:50%; animation:dispatch-spin .9s linear infinite; }
 .attachment-footer { padding:10px 24px; color:#9ba9b9; font-size:10px; border-top:1px solid #d9e5ef25; }
+.attachment-content--pdf,.study-resource-content--pdf { overflow:hidden; }
+.study-pdf { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.study-pdf-toolbar { display:flex; align-items:center; justify-content:center; gap:6px; padding:6px 12px; border-bottom:1px solid #d9e5ef25; }
+.study-pdf-toolbar button { padding:8px; }
+.study-pdf-toolbar span { min-width:62px; text-align:center; font-size:11px; font-variant-numeric:tabular-nums; }
+.study-pdf-page { position:relative; flex:1; min-height:0; padding:12px; overflow:auto; background:#e9e8e4; }
+.study-pdf-page canvas { display:block; margin:0 auto; background:#fff; }
+.study-pdf-page canvas[hidden] { display:none; }
+.study-pdf-page .attachment-state { min-height:240px; color:#263749; }
+.study-pdf-text { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 @media(max-width:650px) {
   .attachment-backdrop { padding:0; }
   .attachment-viewer { height:100svh; width:100%; border:0; border-radius:0; }

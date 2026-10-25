@@ -9,7 +9,7 @@ if (Test-Path -LiteralPath $resolvedOutput) { throw 'Choose a fresh extraction d
 $archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedArchive)
 try {
   $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-  $items = @()
+  $items = [System.Collections.Generic.List[object]]::new()
   $total = 0L
   foreach ($entry in $archive.Entries) {
     $relative = $entry.FullName.Replace('/', '\')
@@ -20,7 +20,7 @@ try {
     if (-not $seen.Add($target)) { throw 'Duplicate ZIP target.' }
     $total += $entry.Length
     if ($entry.Length -gt 100MB -or $total -gt 1GB -or $seen.Count -gt 10000) { throw 'Archive exceeds safety limits.' }
-    $items += @{ Entry=$entry; Target=$target }
+    $items.Add(@{ Entry=$entry; Target=$target })
   }
   New-Item -ItemType Directory -Path $resolvedOutput | Out-Null
   foreach ($item in $items) {

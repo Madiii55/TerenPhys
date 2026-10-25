@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useEmailCooldown } from '../auth/browserState.ts';

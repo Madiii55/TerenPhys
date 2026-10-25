@@ -1,13 +1,13 @@
 # Supabase Auth — TerenPhys
 Проект: gotlcaqzrwfitgiwmsnj (организация TerenPhys, регион ap-northeast-1).
-Firebase SDK и Firestore больше не используются. Старые аккаунты и данные не перенесены.
-Firebase Hosting можно использовать отдельно от базы; firebase.json содержит только хостинг.
+Firebase SDK и Firestore больше не используются. При первоначальном переходе с Firebase старые аккаунты и данные не переносились; при переносе интерфейса на Vercel 13 октября существующие аккаунты и данные Supabase сохранены.
+С 13 октября 2026 интерфейс размещается на Vercel: https://terenphys.vercel.app. Firebase Hosting больше не используется для обновлений; его конфигурация удалена из проекта. Перенос — `VERCEL_SETUP.md`.
 
 ## Окружение
 Скопировать .env.example в .env.local и указать Project URL и sb_publishable_… key.
 Никаких secret/service_role ключей в клиенте, Git или чате.
 VITE_PUBLIC_SITE_URL задаёт реальный публичный адрес для ссылок из писем.
-В `.env.production` указан `https://terenphys.web.app`; production-сборка использует этот адрес для писем.
+В `.env.production` это значение пустое: опубликованная сборка использует текущий HTTPS origin, без старого адреса Firebase. При необходимости канонический адрес можно явно задать через VITE_PUBLIC_SITE_URL.
 В разработке без этого значения ссылки используют текущий локальный адрес.
 
 ## Что применено
@@ -29,8 +29,15 @@ Realtime включён для posts. Типы src/types/database.ts сгене�
 Настройки:
 https://supabase.com/dashboard/project/gotlcaqzrwfitgiwmsnj/auth/url-configuration
 
-Site URL: https://terenphys.web.app
+13 октября 2026 после публикации на Vercel Site URL заменён на новый адрес, добавлены три точных пути нового домена. Сохранение проверено после перезагрузки Dashboard. SMTP, Confirm Email, провайдер Google и серверный callback не менялись.
+
+Реальный Google-вход существующего аккаунта владельца на новом сайте проверен: возврат на `https://terenphys.vercel.app/auth/callback`, «Вход выполнен», query/hash очищены. Снимок — `build/vercel-google-login.png`. Изменение Google Cloud client secret/origins для этого потока не потребовалось, серверный callback остался в Supabase.
+
+Site URL: https://terenphys.vercel.app
 Разрешённые Redirect URLs:
+- https://terenphys.vercel.app/auth/callback
+- https://terenphys.vercel.app/auth/confirm
+- https://terenphys.vercel.app/auth/reset-password
 - https://terenphys.web.app/auth/callback
 - https://terenphys.web.app/auth/confirm
 - https://terenphys.web.app/auth/reset-password
@@ -41,7 +48,7 @@ Site URL: https://terenphys.web.app
 - http://127.0.0.1:4173/auth/confirm
 - http://127.0.0.1:4173/auth/reset-password
 Для pnpm dev также добавлены эти три пути на http://localhost:3000.
-Всего сохранены 12 точных Redirect URLs. При смене публичного домена обновить Site URL и эти три production-пути.
+Всего сохранены 15 точных Redirect URLs, включая три прежних production адреса для старых ссылок. При смене публичного домена обновить Site URL и эти три production-пути.
 Приложение нормализует числовые loopback-адреса в localhost до загрузки SDK.
 Локальная ссылка не открывает ваш компьютер с другого устройства.
 
@@ -51,7 +58,7 @@ Site URL: https://terenphys.web.app
 Коды/токены удаляются из адресной строки. Произвольные continueUrl/next не используются.
 Без настроенных шаблонов PKCE-ссылка требует тот же браузер, где начата регистрация или сброс.
 Если почта подтверждена на другом устройстве, можно войти по почте и паролю.
-Для межустройственной проверки после подключения SMTP использовать в письмах token_hash:
+12 октября 2026 письмо подтверждения настроено через token_hash и работает с существующим verifyOtp независимо от PKCE-браузера. Используется `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`; Site URL проверен как `https://terenphys.web.app`. Шаблон восстановления пока стандартный. Для последующей настройки остальных писем через token_hash:
 Подтверждение: {{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email
 Сброс: {{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery
 Не подставлять настоящий код вместо переменной. Обработчик verifyOtp уже реализован.
@@ -67,7 +74,13 @@ Skip nonce checks и Allow users without an email не включать. Google-
 Secure password change включён: сессия старше 24 часов требует повторной аутентификации перед сменой пароля. Форма восстановления использует свежую recovery-сессию и 30-минутный UI-маркер; для просроченной сессии предлагает новую recovery-ссылку. Require current password when updating не включён, чтобы не сломать восстановление забытого пароля.
 
 ## Письма и бесплатный тариф
-4 октября 2026 в Dashboard повторно проверено: Custom SMTP не настроен; редактирование шаблонов требует подключения SMTP.
+12 октября 2026 **custom SMTP подключён и проверен** по запросу пользователя: sender `TerenPhys@gmail.com`, name `TerenPhys`, host `smtp.gmail.com`, port `465` (SSL/TLS), username `TerenPhys@gmail.com`, интервал 60 секунд. Владелец самостоятельно создал пароль приложения Gmail, ввёл его непосредственно в Dashboard и сохранил настройки. Секрет не читался и не добавлялся в проект. На свежей странице подтверждены включённый SMTP, сохранённая форма и адрес отправителя. Через публичный `/auth/v1/settings` проверено: Email включён, Confirm Email обязателен, Google включён.
+
+В Confirm sign up применён `supabase/templates/confirmation.html` на русском/казахском: тема `TerenPhys — подтверждение почты / Поштаны растау`, ссылка `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email` ведёт на публичный сайт и использует существующий verifyOtp без зависимости от PKCE-браузера. Сохранение повторно проверено после обновления страницы, старый английский текст отсутствует; переменные и совместимость с обработчиком проверены фиктивным токеном. Предпросмотр сохранён в `build/confirmation-supabase-preview.png`. Инструкция — `supabase/templates/README.md`.
+
+По прямому указанию пользователя тестовое письмо отправлено на `madidoskozha@gmail.com` (существующий подтверждённый аккаунт). Для проверки SMTP использован recovery-запрос: сервер принял отправку 12 октября 2026 в 17:56:47 UTC без ошибки, пользователь подтвердил «Пришло от TerenPhys». Пароль не изменён, новый пользователь не создан, ссылка не использовалась агентом. Это проверка реальной SMTP-доставки; новая регистрация с подтверждением в рабочей базе отдельно не создавалась. Результат — `build/smtp-delivery-result.json`. Код приложения, Hosting, RLS и OAuth не изменены.
+
+Исторически, 4 октября 2026: custom SMTP ещё не был настроен; редактирование шаблонов требовало подключения SMTP. Настройка завершена 12 октября, как описано выше.
 Встроенный SMTP предназначен для тестов и отправляет только участникам команды.
 Новые Free-проекты с 3 июня 2026 не могут менять шаблоны без собственного SMTP.
 Для регистрации посетителей и брендированных писем требуется SMTP-сервис.

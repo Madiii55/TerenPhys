@@ -6,33 +6,27 @@ import { useAuth } from '../context/AuthContext.tsx';
 
 import { SCHOOL_GRADES, type SchoolGrade } from '../learning/catalogue.ts';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
+import { createDateFormatter } from '../i18n/formatters.ts';
 import { TelegramFeed } from './TelegramFeed.tsx';
 
 export interface ClassPost {
   id: string;
-  grade: SchoolGrade;
   text: string;
-  authorId: string;
   authorName: string;
   authorAvatarUrl?: string;
   createdAt: string;
 }
 
 interface PostsPageProps {
-  onOpenAuth: (mode: 'login' | 'register') => void;
   active?: boolean;
 }
 
+const formatDate = createDateFormatter({ day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const formatPublishedAt = (value: string, locale: string, t: (source: string) => string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return t('только что');
 
-  return new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return formatDate(date, locale);
 };
 
 export function PostEntry({ post }: { post: ClassPost }) {
@@ -61,6 +55,8 @@ function ClassPostsFeed({ selectedGrade, active: pageActive }: { selectedGrade: 
   const [postText, setPostText] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
+  const additionalEntries = useMemo(() => posts.map(post => ({ key: 'site-' + post.id,
+    publishedAt: post.createdAt, content: <PostEntry post={post}/> })), [posts]);
 
   useEffect(() => {
     if (!pageActive) return;
@@ -72,7 +68,7 @@ function ClassPostsFeed({ selectedGrade, active: pageActive }: { selectedGrade: 
     const abort = new AbortController();
     const loadPosts = async () => {
       const version = ++request;
-      const { data, error } = await supabase.from('posts').select('*')
+      const { data, error } = await supabase.from('posts').select('id,text,author_name,author_avatar_path,created_at')
         .eq('grade', selectedGrade).order('created_at', { ascending: false })
         .order('id', { ascending: false }).limit(100).abortSignal(abort.signal);
       if (!active || version !== request) return;
@@ -80,8 +76,7 @@ function ClassPostsFeed({ selectedGrade, active: pageActive }: { selectedGrade: 
         setPostsError('Не удалось загрузить посты. Попробуйте обновить страницу.');
       } else {
         setPostsError('');
-        setPosts((data || []).map(post => ({ id: String(post.id), grade: post.grade as SchoolGrade,
-          text: post.text, authorId: post.author_id, authorName: post.author_name,
+        setPosts((data || []).map(post => ({ id: String(post.id), text: post.text, authorName: post.author_name,
           authorAvatarUrl: avatarUrl(post.author_avatar_path, post.created_at), createdAt: post.created_at })));
       }
       setIsPostsLoading(false);
@@ -129,12 +124,7 @@ function ClassPostsFeed({ selectedGrade, active: pageActive }: { selectedGrade: 
     };
   }, [selectedGrade, user?.id, user?.emailVerified, pageActive]);
 
-  const composerState = useMemo(() => {
-    if (isAuthLoading || isAuthorLoading) return 'loading';
-    if (!user) return 'guest';
-    if (!canPublish) return 'restricted';
-    return 'ready';
-  }, [canPublish, isAuthLoading, isAuthorLoading, user]);
+  const composerState = isAuthLoading || isAuthorLoading ? 'loading' : !user ? 'guest' : !canPublish ? 'restricted' : 'ready';
 
   const handlePublish = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -165,7 +155,7 @@ function ClassPostsFeed({ selectedGrade, active: pageActive }: { selectedGrade: 
 
   return (
         <TelegramFeed key={selectedGrade} grade={selectedGrade} active={pageActive}
-          additionalEntries={posts.map(post => ({ key: 'site-' + post.id, publishedAt: post.createdAt, content: <PostEntry post={post}/> }))}
+          additionalEntries={additionalEntries}
           additionalLoading={isPostsLoading} additionalError={postsError}>
           {composerState !== 'guest' && <footer className="dispatch-composer">
             {composerState === 'loading' ? <p className="dispatch-permission" role="status">{t("Проверяем права автора…")}</p>

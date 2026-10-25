@@ -3,6 +3,7 @@ build/
 dist/
 coverage/
 .firebase/
+.vercel/
 supabase/.temp/
 .DS_Store
 *.log

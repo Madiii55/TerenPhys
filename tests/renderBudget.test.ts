@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AdaptiveRenderBudget, CosmicFramePacer, cosmicRenderSize } from '../src/graphics/renderBudget.ts';
+import { AdaptiveRenderBudget, CosmicFramePacer, cosmicDeviceBudget, cosmicRenderSize } from '../src/graphics/renderBudget.ts';
 import { blackHoleFragment, galaxyFragment } from '../src/graphics/cosmicShaders.ts';
-import { ACCRETION_DISK } from '../src/graphics/accretionDisk.ts';
+import { ACCRETION_DISK, ACCRETION_STEPS } from '../src/graphics/accretionDisk.ts';
 
 test('render targets stay bounded on desktop, Retina, ultrawide and mobile screens', () => {
   for (const [width, height, dpr] of [[1242, 764, 2], [3840, 2160, 2], [5120, 1440, 2], [390, 844, 3], [1, 1, 1]]) {
@@ -71,10 +71,21 @@ test('hidden-tab resume does not burst through missed frames', () => {
   assert.equal(pacer.due(30001), true);
 });
 
+test('mobile and constrained devices start with less GPU work without changing animation time', () => {
+  assert.deepEqual(cosmicDeviceBudget(false, 8), { quality: 1, idleFps: 60 });
+  assert.deepEqual(cosmicDeviceBudget(true, 8), { quality: .85, idleFps: 45 });
+  for (const device of [cosmicDeviceBudget(false, 4), cosmicDeviceBudget(true, 8, true)]) {
+    assert.deepEqual(device, { quality: .7, idleFps: 30 });
+    const budget = new AdaptiveRenderBudget(device.quality);
+    for (let i = 0; i < 200; i++) budget.sample(1000 / device.idleFps * device.idleFps / 60, true);
+    assert.equal(budget.quality, device.quality);
+  }
+});
+
 test('empty-space bounds include the whole thin warped accretion disk', () => {
   const bound = ACCRETION_DISK.outerThickness * 2.5 + 0.071;
   assert.ok(bound > ACCRETION_DISK.outerThickness * 2.5 + 0.045 + 0.025);
-  for (const steps of [144, 192]) {
+  for (const steps of Object.values(ACCRETION_STEPS)) {
     assert.ok(blackHoleFragment(steps).includes(`if (abs(p.y) > ${bound.toFixed(4)}) return;`));
   }
   const galaxy = galaxyFragment(48);

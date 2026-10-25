@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { ArrowDown, ArrowUpRight, Download, FileText } from 'lucide-react';
 import { supabase, supabaseUrl } from '../supabase.ts';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
+import { createDateFormatter } from '../i18n/formatters.ts';
 import { loadTelegramPage, telegramRow, type TelegramCursor } from '../telegram/api.ts';
 import type { Tables } from '../types/database.ts';
 import type { SchoolGrade } from '../learning/catalogue.ts';
@@ -10,6 +11,9 @@ import { TELEGRAM_CHANNEL, TELEGRAM_TITLE, groupTelegramPosts, mergeTelegramPost
 import { attachmentFormat, attachmentPreviewKind } from '../telegram/preview.ts';
 
 const AttachmentViewer = lazy(() => import('./AttachmentViewer.tsx'));
+const formatPublishedAt = createDateFormatter({ day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const entryOrder = new Intl.Collator('en', { numeric: true });
+const NO_ADDITIONAL_ENTRIES: readonly DispatchFeedEntry[] = [];
 
 // Telegram offsets are UTF-16, like JS strings. Imported HTML is never executed.
 export function TelegramText({ text, entities }: { text: string; entities: TelegramEntity[] }) {
@@ -82,9 +86,7 @@ export function TelegramEntry({ post, onPreview }: { post: TelegramPost; onPrevi
   const open = (item: TelegramAttachment) => { const index = previews.indexOf(item); if (index >= 0) onPreview?.(previews, index); };
   return <article className="dispatch-entry telegram-entry">
     <header><span className="dispatch-author">{TELEGRAM_TITLE}</span>
-      <time dateTime={post.published_at}>{new Intl.DateTimeFormat(intlLocale, {
-        day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-      }).format(new Date(post.published_at))}</time>
+      <time dateTime={post.published_at}>{formatPublishedAt(new Date(post.published_at), intlLocale)}</time>
     </header>
     {post.text && <div className="dispatch-text"><TelegramText text={post.text} entities={post.entities}/></div>}
     {media.length > 0 && <div className={'telegram-media' + (media.length > 1 ? ' telegram-media--album' : '')}>{media.map((item, i) =>
@@ -105,7 +107,7 @@ interface TelegramFeedProps {
   children?: React.ReactNode;
 }
 
-export function TelegramFeed({ active, grade, additionalEntries = [], additionalLoading = false, additionalError = '', children }: TelegramFeedProps) {
+export function TelegramFeed({ active, grade, additionalEntries = NO_ADDITIONAL_ENTRIES, additionalLoading = false, additionalError = '', children }: TelegramFeedProps) {
   const { t, gradeLabel } = useLanguage();
   const [posts, setPosts] = useState<TelegramPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,7 +120,8 @@ export function TelegramFeed({ active, grade, additionalEntries = [], additional
   const entries = useMemo(() => groupTelegramPosts(posts).filter(post => grade === undefined || telegramMatchesGrade(post, grade)), [posts, grade]);
   const timeline = useMemo(() => [...additionalEntries, ...entries.map(post => ({ key: 'telegram-' + post.message_id,
     publishedAt: post.published_at, content: <TelegramEntry post={post} onPreview={openViewer}/> }))]
-    .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt) || b.key.localeCompare(a.key, 'en', { numeric: true })),
+    .map(entry => ({ ...entry, timestamp: Date.parse(entry.publishedAt) }))
+    .sort((a, b) => b.timestamp - a.timestamp || entryOrder.compare(b.key, a.key)),
   [additionalEntries, entries, openViewer]);
   const cursor = useRef<TelegramCursor | undefined>(undefined);
   const generation = useRef(0);

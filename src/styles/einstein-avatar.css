@@ -1,0 +1,2 @@
+.einstein-avatar { display:block; position:relative; width:100%; height:100%; min-width:0; min-height:0; pointer-events:none; }
+.einstein-avatar > canvas { display:block; width:100%; height:100%; }

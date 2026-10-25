@@ -1,0 +1,19 @@
+:root { --site-header-height: 80px; }
+.site-signout-icon { display: none; }
+
+@media (max-width: 600px) {
+  .site-header .site-header-inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; padding-inline: 12px; }
+  .site-header .site-home-logo { min-width: 0; min-height: 44px; }
+  .site-header .site-home-logo svg { width: min(100%, 120px); height: auto; }
+  .site-header .site-header-tools { gap: 6px; font-size: 13px; }
+  .site-header .site-header-tools > [role="status"] { max-width: 88px; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+  .site-header .site-header-tools .site-header-account { gap: 4px; }
+  .site-header .language-switch button { min-width: 44px; min-height: 44px; }
+  .site-header .site-profile-button { justify-content: center; width: 44px; min-height: 44px; padding: 8px; }
+  .site-header .site-signout-button { display: inline-flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; }
+  .site-header .site-signout-button > span { display: none; }
+  .site-header .site-signout-icon { display: block; width: 18px; height: 18px; }
+  .site-header .site-header-tools > div:not(.language-switch) > button { min-height: 44px; }
+  .site-header .site-nav { grid-column: 1 / -1; justify-content: space-between; gap: 4px; }
+  .site-header .site-nav > button { min-height: 44px; padding-inline: 4px; }
+}

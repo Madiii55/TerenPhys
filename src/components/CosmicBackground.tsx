@@ -6,26 +6,27 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { CopyShader } from 'three/addons/shaders/CopyShader.js';
-import { createGalaxyClouds, createGalaxyVolume, createStarField, createStaticBackdrop } from '../graphics/createCosmicObjects.ts';
+import { createGalaxyClouds, createGalaxyVolume, createNuclearCluster, createStarField, createStaticBackdrop } from '../graphics/createCosmicObjects.ts';
 import { blackHoleFragment, detailBlendShader, worldVertex } from '../graphics/cosmicShaders.ts';
-import { CameraFlight, smoothRange, type CameraView } from '../graphics/cameraFlight.ts';
-import { cosmicVisibility, FAR_CLIP, GALAXY_SCALE, GALAXY_SHAPE, HOME_DISTANCE, ORBIT_DURATION, ZOOM_DURATION } from '../graphics/cosmicScale.ts';
-import { ACCRETION_DISK, accretionMatterPhase } from '../graphics/accretionDisk.ts';
-import { AdaptiveRenderBudget, CosmicFramePacer, cosmicRenderSize } from '../graphics/renderBudget.ts';
+import { CameraFlight, type CameraView } from '../graphics/cameraFlight.ts';
+import { cosmicCameraOrientation } from '../graphics/orientation.ts';
+import { cosmicVisibility, FAR_CLIP, GALAXY_SCALE, GALAXY_SHAPE, GALAXY_ROTATION_RATE, GALAXY_MATTER_RATE, HOME_DISTANCE, ORBIT_DURATION, ZOOM_DURATION } from '../graphics/cosmicScale.ts';
+import { ACCRETION_DISK, ACCRETION_STEPS, accretionMatterPhase } from '../graphics/accretionDisk.ts';
+import { AdaptiveRenderBudget, CosmicFramePacer, cosmicDeviceBudget, cosmicRenderSize } from '../graphics/renderBudget.ts';
 import type { NavTab } from './Navbar.tsx';
 
 const VIEWS: Record<NavTab, CameraView> = {
   home: { distance: HOME_DISTANCE, polar: 1.42, azimuth: 0.16, panX: 0.265, panY: 0.015 },
   study: { distance: 87 * GALAXY_SCALE, polar: 0.82, azimuth: -0.7, panX: -0.27, panY: 0.3 },
-  posts: { distance: 86 * GALAXY_SCALE, polar: 1.02, azimuth: 0.65, panX: 0.08, panY: 0.02 },
-  profile: { distance: 85 * GALAXY_SCALE, polar: 1.08, azimuth: 1.8, panX: 0.02, panY: 0.04 },
-  forum: { distance: 89 * GALAXY_SCALE, polar: 0.94, azimuth: -1.65, panX: 0, panY: 0 },
+  posts: { distance: 86 * GALAXY_SCALE, polar: 1.02, azimuth: 0.65, panX: 0.18, panY: -0.12 },
+  profile: { distance: 85 * GALAXY_SCALE, polar: 1.08, azimuth: 1.8, panX: 0.14, panY: 0.2 },
+  forum: { distance: 89 * GALAXY_SCALE, polar: 0.94, azimuth: -1.65, panX: -0.08, panY: -0.06 },
 };
 
 interface CosmicBackgroundProps {
   activeTab: NavTab;
   transitionId: number;
-  onTransitionComplete: (id: number) => void;
+  onTransitionComplete?: (id: number) => void;
 }
 
 export function CosmicBackground({ activeTab, transitionId, onTransitionComplete }: CosmicBackgroundProps) {
@@ -39,14 +40,16 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
   const fallbackRef = useRef(false);
 
   useEffect(() => {
-    if (fallbackRef.current) completeRef.current(transitionId);
+    if (fallbackRef.current) completeRef.current?.(transitionId);
   }, [transitionId]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const mobile = window.innerWidth < 768;
-    const budget = new AdaptiveRenderBudget();
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+    const device = cosmicDeviceBudget(mobile, navigator.hardwareConcurrency, !!connection?.saveData);
+    const budget = new AdaptiveRenderBudget(device.quality);
     const pacer = new CosmicFramePacer();
     let disposed = false;
     let prepared = false;
@@ -58,7 +61,7 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
     } catch (error) {
       console.warn('3D background unavailable:', error);
       fallbackRef.current = true;
-      completeRef.current(requestRef.current);
+      completeRef.current?.(requestRef.current);
       return;
     }
     // Presentation and heavy volumetric targets have separate pixel budgets.
@@ -68,9 +71,18 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.domElement.setAttribute('aria-hidden', 'true');
-    renderer.domElement.dataset.accretionModel = 'volumetric-clumps';
-    renderer.domElement.dataset.accretionSteps = String(mobile ? 144 : 192);
+    renderer.domElement.dataset.accretionModel = 'relativistic-plasma';
+    const accretionSteps = mobile ? ACCRETION_STEPS.mobile : ACCRETION_STEPS.desktop;
+    renderer.domElement.dataset.accretionSteps = String(accretionSteps);
     container.appendChild(renderer.domElement);
+    function contextLost(event: Event) {
+      event.preventDefault();
+      fallbackRef.current = true;
+      renderer.domElement.hidden = true;
+      renderer.setAnimationLoop(null);
+      completeRef.current?.(requestRef.current);
+    }
+    renderer.domElement.addEventListener('webglcontextlost', contextLost);
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(48, 1, 0.1, FAR_CLIP);
@@ -85,15 +97,16 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
     const gas = createGalaxyVolume(mobile ? 18000 : 65000, false, farParticleScale, clouds);
     const dust = createGalaxyVolume(mobile ? 1200 : 4200, true, farParticleScale, clouds);
     const backdrop = createStaticBackdrop();
+    const nucleus = createNuclearCluster(mobile ? 1200 : 2600);
     galaxy.add(clouds, gas, stars, dust);
     galaxy.scale.set(GALAXY_SCALE * GALAXY_SHAPE.x, GALAXY_SCALE * GALAXY_SHAPE.y, GALAXY_SCALE * GALAXY_SHAPE.z);
     sky.scale.setScalar(GALAXY_SCALE);
     backdrop.scale.setScalar(GALAXY_SCALE);
-    scene.add(galaxy, sky, backdrop);
+    scene.add(galaxy, sky, backdrop, nucleus);
 
-    // The near ray tracer sees only the distant environment, never the local
-    // galaxy volume. Crossfade complete near/far layers, avoiding false lensing
-    // of the nucleus and opaque billboard edges during the detail handover.
+    // The near ray tracer excludes the large galaxy volume. Its background
+    // lensing fades before the small nuclear star field becomes prominent.
+    // Crossfade complete layers to avoid opaque edges during the handover.
     const backgroundTarget = new THREE.WebGLRenderTarget(1, 1, {
       type: THREE.HalfFloatType, depthBuffer: false,
     });
@@ -108,7 +121,7 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
     const cachedBackgroundView = new THREE.Matrix4();
     let backgroundDirty = true;
     const holeMaterial = new THREE.ShaderMaterial({
-      vertexShader: worldVertex, fragmentShader: blackHoleFragment(mobile ? 144 : 192),
+      vertexShader: worldVertex, fragmentShader: blackHoleFragment(accretionSteps),
       uniforms: {
         uCameraPosition: { value: new THREE.Vector3() },
         uViewProjection: { value: new THREE.Matrix4() },
@@ -147,7 +160,7 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
       const view = { ...VIEWS[tab] };
       if (compact) {
         view.distance *= tab === 'home' ? 1.3 : 1.75;
-        view.panX = tab === 'study' ? -0.14 : 0;
+        view.panX = tab === 'study' ? -0.14 : tab === 'home' ? 0 : view.panX * .35;
         if (tab === 'study') view.panY = 0.34;
         if (tab === 'home') view.panY = 0.21;
       }
@@ -211,11 +224,13 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
       if (disposed) return;
       console.warn('3D background preparation failed:', error);
       fallbackRef.current = true;
-      completeRef.current(requestRef.current);
+      completeRef.current?.(requestRef.current);
     });
 
     function render(now: number) {
-      if (!pacer.due(now, reducedMotion ? 12 : 60)) return;
+      const moving = destinationRequest !== requestRef.current || !flight.isSettled(travelTime);
+      const targetFps = reducedMotion ? 12 : moving ? 60 : device.idleFps;
+      if (!pacer.due(now, targetFps)) return;
       if (resizePending) { resizePending = false; resize(); }
       const delta = Math.min((now - lastTime) / 1000, 0.25);
       lastTime = now;
@@ -241,33 +256,31 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
       if (reducedMotion) flight.retarget(responsiveView(destination), travelTime, 0);
       const current = flight.read(travelTime);
       const visibility = cosmicVisibility(current.distance);
-      // Keep the established near-hole angle while its detail is still visible.
-      // Most of the orbital turn happens only after the camera leaves the nucleus.
-      const orbitReveal = compact ? smoothRange(current.distance, 32, 104) : visibility.orbit;
-      const polar = THREE.MathUtils.lerp(VIEWS.home.polar, current.polar, orbitReveal);
-      const homeAzimuth = current.azimuth + Math.atan2(Math.sin(VIEWS.home.azimuth - current.azimuth), Math.cos(VIEWS.home.azimuth - current.azimuth));
-      const azimuth = THREE.MathUtils.lerp(homeAzimuth, current.azimuth, orbitReveal);
+      const { polar, azimuth, roll } = cosmicCameraOrientation(current);
       camera.position.setFromSphericalCoords(current.distance, polar, azimuth);
       camera.lookAt(origin);
-      // A small clockwise camera roll rotates the near object counterclockwise.
-      camera.rotateZ(THREE.MathUtils.lerp(-0.24, 0.34, orbitReveal));
+      camera.rotateZ(roll);
       camera.setViewOffset(width, height, -width * current.panX, -height * current.panY, width, height);
       camera.updateMatrixWorld();
-      galaxy.rotation.y = 0.37 + elapsed * 0.075;
+      galaxy.rotation.y = 0.37 + elapsed * GALAXY_ROTATION_RATE;
       // Sky and remote objects remain world-fixed, providing parallax landmarks.
       const detail = visibility.detail;
-      bloom.strength = THREE.MathUtils.lerp(0.27, 0.26, visibility.disk);
-      bloom.threshold = THREE.MathUtils.lerp(1.45, 1.35, visibility.disk);
+      bloom.strength = THREE.MathUtils.lerp(0.13, 0.26, visibility.disk);
+      bloom.threshold = THREE.MathUtils.lerp(2.2, 1.35, visibility.disk);
+      bloom.radius = THREE.MathUtils.lerp(0.18, 0.35, visibility.disk);
       stars.material.uniforms.uOpacity.value = visibility.cluster * 0.64;
       gas.material.uniforms.uOpacity.value = visibility.cluster * 1.0;
       dust.material.uniforms.uOpacity.value = visibility.disk * 0.48;
       clouds.material.uniforms.uOpacity.value = visibility.disk * 1.1;
-      for (const object of [stars, gas, dust, clouds]) object.material.uniforms.uTime.value = elapsed;
+      for (const object of [stars, gas, dust, clouds]) object.material.uniforms.uTime.value = elapsed * GALAXY_MATTER_RATE;
+      nucleus.material.uniforms.uOpacity.value = visibility.nucleus * .72;
+      nucleus.material.uniforms.uPixelRatio.value = nearTarget.height / height;
+      nucleus.visible = visibility.nucleus > .001;
       // Static field: no orbit or twinkling drift in the far background.
       sky.material.uniforms.uTime.value = 0;
       detailBlend.uniforms.uDetail.value = detail;
-      const rush = Math.min(Math.abs(flight.logDistanceSpeed(travelTime)) / 20, 1);
-      detailBlend.uniforms.uBlur.value = reducedMotion ? 0 : rush * 0.042;
+      const rush = Math.min(Math.abs(flight.logDistanceSpeed(travelTime)) / 12, 1);
+      detailBlend.uniforms.uBlur.value = reducedMotion ? 0 : rush * 0.012;
       detailBlend.uniforms.uFocus.value.set(0.5 + current.panX, 0.5 - current.panY);
       // Publish aggregate diagnostics twice a second, not eight DOM mutations
       // every frame. Sampling frame intervals includes GPU/compositor delays.
@@ -282,6 +295,12 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
         data.cosmicRush = rush.toFixed(3);
         data.cosmicSettled = String(flight.isSettled(travelTime));
         data.cosmicRequest = String(destinationRequest);
+        data.cosmicPan = `${current.panX.toFixed(3)},${current.panY.toFixed(3)}`;
+        data.cosmicAngle = `${polar.toFixed(3)},${azimuth.toFixed(3)}`;
+        data.cosmicRoll = roll.toFixed(4);
+        data.cosmicRotation = galaxy.rotation.y.toFixed(4);
+        data.cosmicNucleus = visibility.nucleus.toFixed(3);
+        data.cosmicTargetFps = String(targetFps);
         data.cosmicFrameMs = (diagnosticElapsed / diagnosticFrames).toFixed(1);
         data.cosmicFps = (diagnosticFrames * 1000 / diagnosticElapsed).toFixed(1);
         diagnosticAt = now;
@@ -309,7 +328,7 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
           backgroundDirty = false;
         }
         blackHole.visible = true;
-        sky.visible = backdrop.visible = false;
+        sky.visible = backdrop.visible = nucleus.visible = false;
         renderer.setRenderTarget(nearTarget);
         backgroundCopy.render(renderer);
         renderer.autoClear = false;
@@ -319,6 +338,8 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
       if (detail < 0.999) {
         blackHole.visible = false;
         sky.visible = backdrop.visible = true;
+        nucleus.visible = visibility.nucleus > .001;
+        nucleus.material.uniforms.uPixelRatio.value = farTarget.height / height;
         sky.material.uniforms.uPixelRatio.value = farParticleScale;
         galaxy.visible = visibility.cluster > 0.0001 || visibility.disk > 0.0001;
         renderer.setRenderTarget(farTarget);
@@ -331,9 +352,11 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
       // Request IDs also handle quick A → B → A clicks between two frames.
       if (flight.isSettled(travelTime) && destinationRequest === requestRef.current && notifiedRequest !== destinationRequest) {
         notifiedRequest = destinationRequest;
-        completeRef.current(destinationRequest);
+        completeRef.current?.(destinationRequest);
       }
-      if (!reducedMotion && budget.sample(delta * 1000, flight.isSettled(travelTime))) resizeTargets();
+      // Normalize intervals to the chosen pacing: intentional 30/45 FPS must
+      // not be mistaken for GPU overload and cause endless quality downshifts.
+      if (!reducedMotion && budget.sample(delta * 1000 * targetFps / 60, flight.isSettled(travelTime))) resizeTargets();
     }
 
     function visibilityChanged() {
@@ -341,7 +364,7 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
       pacer.reset();
       budget.reset();
       diagnosticFrames = diagnosticElapsed = 0;
-      renderer.setAnimationLoop(document.hidden || !prepared ? null : render);
+      renderer.setAnimationLoop(document.hidden || !prepared || fallbackRef.current ? null : render);
     }
     function motionChanged(event: MediaQueryListEvent) {
       reducedMotion = event.matches;
@@ -357,6 +380,7 @@ export function CosmicBackground({ activeTab, transitionId, onTransitionComplete
       resizeObserver.disconnect();
       document.removeEventListener('visibilitychange', visibilityChanged);
       motionPreference.removeEventListener('change', motionChanged);
+      renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Points) {
           object.geometry.dispose();

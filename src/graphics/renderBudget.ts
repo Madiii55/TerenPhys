@@ -11,13 +11,21 @@ export function cosmicRenderSize(width: number, height: number, dpr: number, qua
   };
 }
 
+/** Start conservatively on small devices or a connection requesting less data. */
+export function cosmicDeviceBudget(mobile: boolean, cores = 8, saveData = false) {
+  const constrained = saveData || (cores > 0 && cores <= 4);
+  return { quality: constrained ? .7 : mobile ? .85 : 1, idleFps: constrained ? 30 : mobile ? 45 : 60 };
+}
+
 /** Fast downshift, slow recovery; never resize targets in the middle of a zoom. */
 export class AdaptiveRenderBudget {
-  quality = 1;
+  quality: number;
   private elapsed = 0;
   private frames = 0;
   private healthyMs = 0;
   private cooldownMs = 1800;
+
+  constructor(initialQuality = 1) { this.quality = Math.max(.55, Math.min(1, initialQuality)); }
 
   reset() {
     this.elapsed = this.frames = this.healthyMs = 0;

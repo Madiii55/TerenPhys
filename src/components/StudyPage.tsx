@@ -1,101 +1,17 @@
-import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { ArrowRight, ArrowUpRight, Play, ChevronDown, ArrowLeft, X } from 'lucide-react';
-import { SCHOOL_GRADES, STUDY_QUARTERS, STUDY_PROGRAMME, CLASS_NOTES, hasStudyMaterial, hasStudyQuarters, studySectionsFor, type QuarteredGrade, type StudyQuarter, type StudySection } from '../learning/catalogue.ts';
+import React, { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { ArrowRight, ArrowUpRight, ChevronDown, ArrowLeft, BookOpen, ClipboardCheck } from 'lucide-react';
+import { SCHOOL_GRADES, STUDY_QUARTERS, STUDY_PROGRAMME, CLASS_NOTES, hasStudyMaterial, hasStudyQuarters, isSchoolGrade, studySectionsFor, type QuarteredGrade, type StudyQuarter, type StudySection } from '../learning/catalogue.ts';
 import { initialStudyNavigation, studyNavigationReducer } from '../learning/navigation.ts';
-import { quarterMaterial, sectionMaterials, type SectionMaterials, type StudyResource } from '../learning/materials.ts';
+import { quarterMaterial, quarterSectionTrial, sectionMaterials, quarterMaterialAvailability, sectionMaterialAvailability, type MaterialAvailability, type StudyResource } from '../learning/materials.ts';
 import StudyResourceViewer from './StudyResourceViewer.tsx';
+import StudyLesson from './StudyLesson.tsx';
 import '../styles/learning.css';
 import '../styles/study-materials.css';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
+import { isGuideActionId, type GuideActionId, type StudyGuideContext, type EinsteinLessonContext } from '../einstein/protocol.ts';
+import type { StudyGuideAction } from '../einstein/guide.ts';
 
-export function StudyQuarterList({ grade, onSelect }: { grade: QuarteredGrade; onSelect: (quarter: StudyQuarter) => void }) {
-  const { t } = useLanguage();
-  return <div className="learning-index">
-    <div className="learning-list-label"><span>{t('Четверти')}</span><span>{t('Разделы')}</span></div>
-    <div className="learning-quarter-list" role="group" aria-label={t('Выбор четверти')}>
-      {STUDY_QUARTERS.map(quarter => <button key={quarter} className="learning-class-row learning-quarter-row"
-        aria-label={t('{quarter} четверть', { quarter })} onClick={() => onSelect(quarter)}>
-        <span className="learning-class-number">{quarter}</span>
-        <span className="learning-class-copy"><span>{t('четверть')}</span></span>
-        <span className="learning-quarter-count" aria-hidden="true">{String(STUDY_PROGRAMME[grade][quarter].length).padStart(2, '0')}</span>
-        <ArrowUpRight aria-hidden="true"/>
-      </button>)}
-    </div>
-  </div>;
-}
-
-export function StudySectionList({ sections, onSelect }: { sections: readonly StudySection[]; onSelect: (sectionId: string) => void }) {
-  const { t } = useLanguage();
-  return <div className="learning-index learning-catalogue">
-    <div className="learning-contents" role="group" aria-label={t('Выбор раздела')}>
-      <div className="learning-list-label"><span>{t('Разделы')}</span><span>{String(sections.length).padStart(2, '0')}</span></div>
-      {sections.map((section, index) => <button key={section.id} className="learning-content-row"
-        aria-label={section.id.startsWith('12-') ? t(section.title) : section.id + ' — ' + t(section.title)}
-        onClick={() => onSelect(section.id)}>
-        <span className="learning-item-number learning-section-code">{section.id.startsWith('12-') ? String(index + 1).padStart(2, '0') : section.id}</span>
-        <span>{t(section.title)}</span><ArrowRight aria-hidden="true"/>
-      </button>)}
-    </div>
-  </div>;
-}
-
-export function StudyResourceCards({ materials, onOpen, onLegacyNotes }: {
-  materials: SectionMaterials;
-  onOpen: (kind: 'notes' | 'trial', index?: number) => void;
-  onLegacyNotes?: () => void;
-}) {
-  const { t } = useLanguage();
-  return <div className="learning-resources" aria-label={t('Материалы раздела')}>
-    <section className="learning-resource" aria-labelledby="learning-notes-title">
-      <span className="learning-resource-number" aria-hidden="true">01</span>
-      <h2 id="learning-notes-title">{t('Конспект')}</h2>
-      <p className="learning-resource-meta">{materials.notes ? t('3 страницы') : onLegacyNotes ? '' : t('Конспект пока не добавлен.')}</p>
-      {(materials.notes || onLegacyNotes) && <div className="learning-resource-actions"><button type="button" onClick={() => materials.notes ? onOpen('notes') : onLegacyNotes?.()}>{t('Читать конспект')}<ArrowUpRight aria-hidden="true"/></button></div>}
-    </section>
-    <section className="learning-resource" aria-labelledby="learning-trial-title">
-      <span className="learning-resource-number" aria-hidden="true">02</span>
-      <h2 id="learning-trial-title">{t('Пробный СОР')}</h2>
-      <p className="learning-resource-meta">{materials.trial ? 'DOCX' : t('Пробный СОР пока не добавлен.')}</p>
-      {materials.trial && <div className="learning-resource-actions">
-        <button type="button" onClick={() => onOpen('trial')}>{t('Открыть')}<ArrowUpRight aria-hidden="true"/></button>
-        {materials.trial.files.some(file => file.label === 'Ответы') && <button type="button" onClick={() => onOpen('trial', materials.trial!.files.findIndex(file => file.label === 'Ответы'))}>{t('Ответы')}<ArrowRight aria-hidden="true"/></button>}
-      </div>}
-    </section>
-  </div>;
-}
-
-export const StudyPage: React.FC = () => {
-  const { t, gradeLabel, language } = useLanguage();
-  const [navigation, dispatch] = useReducer(studyNavigationReducer, initialStudyNavigation);
-  const { level, grade: selectedClass, quarter: selectedQuarter, sectionId } = navigation;
-  const [showTheoryModal, setShowTheoryModal] = useState<boolean>(false);
-  const [showMoreTasks, setShowMoreTasks] = useState<boolean>(false);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [feedback, setFeedback] = useState<Record<number, boolean | null>>({});
-  const [openResource, setOpenResource] = useState<{ kind: 'notes' | 'trial' | 'quarter'; index: number } | null>(null);
-  const closeResource = useCallback(() => setOpenResource(null), []);
-
-  const theoryRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showTheoryModal) return;
-    const previous = document.activeElement as HTMLElement | null;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    theoryRef.current?.querySelector('button')?.focus();
-    const keyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowTheoryModal(false);
-      if (event.key !== 'Tab') return;
-      const buttons = [...(theoryRef.current?.querySelectorAll<HTMLButtonElement>('button') || [])];
-      const first = buttons[0], last = buttons.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    };
-    document.addEventListener('keydown', keyDown);
-    return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', keyDown); previous?.focus(); };
-  }, [showTheoryModal]);
-
-  const tasks = [
+const KINEMATICS_TASKS = [
     {
       id: 1,
       text: 'Тело движется по прямой с ускорением 2 м/с². Какова его скорость через 5 секунд, если начальная скорость равна 10 м/с?',
@@ -128,13 +44,90 @@ export const StudyPage: React.FC = () => {
     },
   ];
 
+function MaterialStatus({ id, availability }: { id: string; availability: MaterialAvailability }) {
+  const { t } = useLanguage();
+  return <span id={id} className="learning-material-status">
+    {availability.notes && <span className="learning-material-icon learning-notes-icon" data-material="notes" title={t('Есть конспекты')}>
+      <BookOpen aria-hidden="true"/><span className="learning-material-description">{t('Есть конспекты')}</span>
+    </span>}
+    {availability.trials && <span className="learning-material-icon learning-trials-icon" data-material="trials" title={t('Есть пробники')}>
+      <ClipboardCheck aria-hidden="true"/><span className="learning-material-description">{t('Есть пробники')}</span>
+    </span>}
+    {!availability.notes && !availability.trials && <span className="learning-material-description">{t('Материалы пока не добавлены')}</span>}
+  </span>;
+}
+
+export function StudyQuarterList({ grade, onSelect }: { grade: QuarteredGrade; onSelect: (quarter: StudyQuarter) => void }) {
+  const { t, language } = useLanguage();
+  return <div className="learning-index">
+    <div className="learning-list-label"><span>{t('Четверти')}</span><span>{t('Разделы')}</span></div>
+    <div className="learning-quarter-list" data-einstein="study-quarters" role="group" aria-label={t('Выбор четверти')}>
+      {STUDY_QUARTERS.map((quarter, index) => <button key={quarter} className="learning-class-row learning-quarter-row"
+        data-einstein={`quarter-${quarter}`}
+        style={{ '--learning-order': index } as React.CSSProperties}
+        aria-label={t('{quarter} четверть', { quarter })} aria-describedby={`study-quarter-materials-${grade}-${quarter}`} onClick={() => onSelect(quarter)}>
+        <span className="learning-class-number">{quarter}</span>
+        <span className="learning-class-copy"><span>{t('четверть')}</span></span>
+        <MaterialStatus id={`study-quarter-materials-${grade}-${quarter}`} availability={quarterMaterialAvailability(grade, quarter, language)}/>
+        <span className="learning-quarter-count" aria-hidden="true">{String(STUDY_PROGRAMME[grade][quarter].length).padStart(2, '0')}</span>
+        <ArrowUpRight aria-hidden="true"/>
+      </button>)}
+    </div>
+  </div>;
+}
+
+export function StudySectionList({ sections, onSelect }: { sections: readonly StudySection[]; onSelect: (sectionId: string) => void }) {
+  const { t, language } = useLanguage();
+  return <div className="learning-index learning-catalogue">
+    <div className="learning-contents" data-einstein="study-sections" role="group" aria-label={t('Выбор раздела')}>
+      <div className="learning-list-label"><span>{t('Разделы')}</span><span>{String(sections.length).padStart(2, '0')}</span></div>
+      {sections.map((section, index) => <button key={section.id} className="learning-content-row"
+        data-einstein={`section-${section.id}`}
+        style={{ '--learning-order': index } as React.CSSProperties}
+        aria-label={section.id.startsWith('12-') ? t(section.title) : section.id + ' — ' + t(section.title)}
+        aria-describedby={`study-section-materials-${section.id}`}
+        onClick={() => onSelect(section.id)}>
+        <span className="learning-item-number learning-section-code">{section.id.startsWith('12-') ? String(index + 1).padStart(2, '0') : section.id}</span>
+        <span className="learning-section-title">{t(section.title)}</span>
+        <MaterialStatus id={`study-section-materials-${section.id}`} availability={sectionMaterialAvailability(Number(section.id.split('.')[0]), section.id, language)}/>
+        <ArrowRight aria-hidden="true"/>
+      </button>)}
+    </div>
+  </div>;
+}
+
+interface StudyPageProps {
+  active?: boolean;
+  onContextChange?: (context: StudyGuideContext) => void;
+  guideAction?: StudyGuideAction | null;
+  onAskEinstein?: (question: string) => void;
+}
+
+export const StudyPage: React.FC<StudyPageProps> = ({ active = true, onContextChange, guideAction, onAskEinstein }) => {
+  const { t, gradeLabel, language } = useLanguage();
+  const [navigation, dispatch] = useReducer(studyNavigationReducer, initialStudyNavigation);
+  const { level, grade: selectedClass, quarter: selectedQuarter, sectionId } = navigation;
+  const lessonKey = `${sectionId}-${language}`;
+  const [lessonContext, setLessonContext] = useState<{ key: string; lesson: EinsteinLessonContext | undefined }>();
+  const onLessonContext = useCallback((lesson: EinsteinLessonContext | undefined) => setLessonContext({ key: lessonKey, lesson }), [lessonKey]);
+  useLayoutEffect(() => {
+    if (level === 'material' && window.scrollY > 0) window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+  }, [level, selectedClass, selectedQuarter, sectionId]);
+  const [showMoreTasks, setShowMoreTasks] = useState<boolean>(false);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [feedback, setFeedback] = useState<Record<number, boolean | null>>({});
+  const [openResource, setOpenResource] = useState<{ kind: 'trial' | 'quarter' | 'quarterTrial'; index: number } | null>(null);
+  const closeResource = useCallback(() => setOpenResource(null), []);
+  const contextCallback = useRef(onContextChange);
+  contextCallback.current = onContextChange;
+  const handledGuideRequest = useRef(-1);
+  useEffect(() => {
+    if (!active) setOpenResource(null);
+  }, [active]);
+
   const handleCheckAnswer = (id: number, correctAnswer: string) => {
     const val = (answers[id] || '').trim();
-    if (val === correctAnswer || parseFloat(val) === parseFloat(correctAnswer)) {
-      setFeedback((prev) => ({ ...prev, [id]: true }));
-    } else {
-      setFeedback((prev) => ({ ...prev, [id]: false }));
-    }
+    setFeedback((prev) => ({ ...prev, [id]: val === correctAnswer || parseFloat(val) === parseFloat(correctAnswer) }));
   };
 
   const sectionList = studySectionsFor(selectedClass, selectedQuarter);
@@ -142,7 +135,9 @@ export const StudyPage: React.FC = () => {
   const materialAvailable = hasStudyMaterial(selectedClass, sectionId);
   const materials = sectionMaterials(selectedClass, sectionId, language);
   const quarterTrial = quarterMaterial(selectedClass, selectedQuarter, language);
+  const unassignedTrial = quarterSectionTrial(selectedClass, selectedQuarter, language);
   const viewedResource: StudyResource | undefined = openResource?.kind === 'quarter' ? quarterTrial
+    : openResource?.kind === 'quarterTrial' ? unassignedTrial
     : openResource ? materials[openResource.kind] : undefined;
   const quarterLabel = selectedQuarter === null ? '' : t('{quarter} четверть', { quarter: selectedQuarter });
   const title = level === 'classes' ? t('Учёба') : level === 'material' ? t(selectedSection?.title || 'Раздел')
@@ -151,12 +146,63 @@ export const StudyPage: React.FC = () => {
     : level === 'sections' && hasStudyQuarters(selectedClass) ? t('Все четверти') : t('Все классы');
   const selectSection = (id: string) => {
     dispatch({ type: 'select-section', sectionId: id });
-    setShowTheoryModal(false); setShowMoreTasks(false); setAnswers({}); setFeedback({});
+    setOpenResource(null); setShowMoreTasks(false); setAnswers({}); setFeedback({});
   };
+
+  const availableActions: GuideActionId[] = level === 'classes'
+    ? SCHOOL_GRADES.map(grade => `select-grade-${grade}` as GuideActionId)
+    : level === 'quarters' && hasStudyQuarters(selectedClass)
+      ? STUDY_QUARTERS.map(quarter => `select-quarter-${quarter}` as GuideActionId)
+      : level === 'sections'
+        ? [...(quarterTrial ? ['show-quarter-exam' as const] : []), ...(unassignedTrial ? ['show-trial' as const] : [])]
+        : level === 'material'
+          ? [...(materials.notes || materialAvailable ? ['show-notes' as const] : []),
+            ...(materials.trial ? ['show-trial' as const] : []), ...(materialAvailable ? ['show-practice' as const] : [])]
+          : [];
+  const publicContext: StudyGuideContext = {
+    studyLevel: level,
+    ...(level !== 'classes' ? { grade: selectedClass } : {}),
+    ...(level !== 'classes' && level !== 'quarters' && selectedQuarter !== null ? { quarter: selectedQuarter } : {}),
+    ...(level === 'material' && selectedSection ? { sectionId: selectedSection.id, topic: t(selectedSection.title) } : {}),
+    ...(level === 'material' ? { view: openResource ? openResource.kind === 'quarter' ? 'quarter-exam' as const : 'trial' as const : 'notes' as const } : {}),
+    ...(level === 'material' && !openResource && lessonContext?.key === lessonKey && lessonContext.lesson ? { lesson: lessonContext.lesson } : {}),
+    availableActions,
+  };
+  const contextSignature = JSON.stringify(publicContext);
+  useEffect(() => { if (active) contextCallback.current?.(publicContext); }, [active, contextSignature]);
+  useEffect(() => {
+    if (!active || !guideAction || !Number.isSafeInteger(guideAction.requestId)
+      || guideAction.requestId <= handledGuideRequest.current || !isGuideActionId(guideAction.id)) return;
+    handledGuideRequest.current = guideAction.requestId;
+    const id = guideAction.id;
+    if (id === 'navigate-study') {
+      dispatch({ type: 'classes' }); setOpenResource(null);
+      return;
+    }
+    if (!availableActions.includes(id)) return;
+    const grade = /^select-grade-(7|8|9|10|11|12)$/.exec(id);
+    if (grade && isSchoolGrade(Number(grade[1]))) {
+      dispatch({ type: 'select-grade', grade: Number(grade[1]) as typeof selectedClass });
+      return;
+    }
+    const quarter = /^select-quarter-([1-4])$/.exec(id);
+    if (quarter && hasStudyQuarters(selectedClass)) {
+      dispatch({ type: 'select-quarter', quarter: Number(quarter[1]) as StudyQuarter });
+      return;
+    }
+    if (id === 'show-notes') {
+      const notes = document.getElementById('study-notes');
+      notes?.scrollIntoView?.({ block: 'start' });
+      notes?.focus({ preventScroll: true });
+    } else if (id === 'show-trial') {
+      if (level === 'sections' && unassignedTrial) setOpenResource({ kind: 'quarterTrial', index: 0 });
+      else if (level === 'material' && materials.trial) setOpenResource({ kind: 'trial', index: 0 });
+    } else if (id === 'show-quarter-exam' && quarterTrial) setOpenResource({ kind: 'quarter', index: 0 });
+  }, [active, guideAction, contextSignature]);
 
   return (
     <main className="study-page learning-editorial" data-study-level={level}>
-      <div className="learning-layout">
+      <div className="learning-layout" key={`${level}-${selectedClass}-${selectedQuarter}-${sectionId}`}>
         <header className="learning-masthead">
           <div>
             <p className="learning-eyebrow">TerenPhys / {level === 'material' ? t("Раздел") : t("Учебная библиотека")}</p>
@@ -178,8 +224,10 @@ export const StudyPage: React.FC = () => {
 
         {level === 'classes' && <div className="learning-index">
           <div className="learning-list-label"><span>{t("Классы")}</span><span>{String(SCHOOL_GRADES.length).padStart(2, '0')}</span></div>
-          <div className="learning-class-list" role="group" aria-label={t("Выбор класса")}>
-            {SCHOOL_GRADES.map(cls => <button key={cls} className="learning-class-row" aria-label={gradeLabel(cls)}
+          <div className="learning-class-list" data-einstein="study-grades" role="group" aria-label={t("Выбор класса")}>
+            {SCHOOL_GRADES.map((cls, index) => <button key={cls} className="learning-class-row" aria-label={gradeLabel(cls)}
+              data-einstein={`grade-${cls}`}
+              style={{ '--learning-order': index } as React.CSSProperties}
               onClick={() => dispatch({ type: 'select-grade', grade: cls })}>
               <span className="learning-class-number">{cls}</span>
               <span className="learning-class-copy"><span>{t("класс")}</span><small>{t(CLASS_NOTES[cls])}</small></span>
@@ -192,24 +240,24 @@ export const StudyPage: React.FC = () => {
 
         {level === 'sections' && <>
           <StudySectionList sections={sectionList} onSelect={selectSection}/>
-          {selectedQuarter !== null && <div className="learning-quarter-trial"><button type="button" disabled={!quarterTrial} onClick={() => setOpenResource({ kind: 'quarter', index: 0 })}>
+          {selectedQuarter !== null && <div className="learning-quarter-trial"><button type="button" data-einstein="study-quarter-exam" disabled={!quarterTrial} onClick={() => setOpenResource({ kind: 'quarter', index: 0 })}>
             <span>{t('Пробный СОЧ')}</span>{quarterTrial ? <ArrowUpRight aria-hidden="true"/> : <small>{t('Пока не добавлен')}</small>}
           </button></div>}
+          {unassignedTrial && <div className="learning-quarter-trial"><button type="button" data-einstein="study-trial" onClick={() => setOpenResource({ kind: 'quarterTrial', index: 0 })}>
+            <span>{t('Пробный СОР за четверть')}</span><ArrowUpRight aria-hidden="true"/>
+          </button><p className="learning-resource-meta">{t('Раздел в источнике не уточнён.')}</p></div>}
         </>}
 
-        {level === 'material' && <StudyResourceCards materials={materials}
-          onOpen={(kind, index = 0) => setOpenResource({ kind, index })}
-          onLegacyNotes={materialAvailable ? () => setShowTheoryModal(true) : undefined}/>}
+        {level === 'material' && <StudyLesson key={`${sectionId}-${language}`} grade={selectedClass} sectionId={sectionId} materials={materials}
+          active={active && !openResource} onContextChange={onLessonContext}
+          onOpenTrial={(index = 0) => setOpenResource({ kind: 'trial', index })}/>}
 
         {level === 'material' && materialAvailable && <div className="learning-lesson-grid">
           <div className="learning-main-column">
-            <section className="learning-video-note" aria-label={t("Видеоурок")}>
-              <Play aria-hidden="true"/><div><span className="learning-eyebrow">{t("Видеоурок")}</span><p>{t("Видео к этому разделу пока не добавлено.")}</p></div>
-            </section>
-            <section aria-labelledby="learning-tasks-heading">
-              <div className="learning-section-heading"><h2 id="learning-tasks-heading">{t("Практика")}</h2><span>{String(tasks.length).padStart(2, '0')}{' '}{t("заданий")}</span></div>
+            <section data-einstein="study-practice" aria-labelledby="learning-tasks-heading">
+              <div className="learning-section-heading"><h2 id="learning-tasks-heading">{t("Практика")}</h2><span>{String(KINEMATICS_TASKS.length).padStart(2, '0')}{' '}{t("заданий")}</span></div>
               <div className="learning-task-list">
-                {(showMoreTasks ? tasks : tasks.slice(0, 3)).map(task => <article key={task.id} className="learning-task">
+                {(showMoreTasks ? KINEMATICS_TASKS : KINEMATICS_TASKS.slice(0, 3)).map(task => <article key={task.id} className="learning-task">
                   <span className="learning-task-number">{String(task.id).padStart(2, '0')}</span>
                   <div>
                     <p>{t(task.text)}</p>
@@ -217,6 +265,9 @@ export const StudyPage: React.FC = () => {
                       <input type="text" inputMode="decimal" placeholder={t("Ваш ответ")} aria-label={t('Ответ на задание {id}', { id: task.id })}
                         value={answers[task.id] || ''} onChange={event => setAnswers({ ...answers, [task.id]: event.target.value })}/>
                       <button type="submit">{t("Проверить")}{' '}<ArrowRight aria-hidden="true"/></button>
+                      {onAskEinstein && <button type="button" className="learning-text-link" onClick={() => onAskEinstein(t('Помоги разобраться в задаче: {text}. Сначала дай подсказку и объясни, с чего начать.', { text: t(task.text) }))}>
+                        {t('Помощь Эйнштейна')}<ArrowUpRight aria-hidden="true"/>
+                      </button>}
                     </form>
                     {feedback[task.id] === true && <p role="status" className="learning-feedback learning-correct">{t("Верно. Можно двигаться дальше.")}</p>}
                     {feedback[task.id] === false && <p role="status" className="learning-feedback learning-incorrect">{t("Попробуйте ещё раз.")}{' '}{t(task.hint)}</p>}
@@ -228,37 +279,12 @@ export const StudyPage: React.FC = () => {
               </button>
             </section>
           </div>
-          <aside className="learning-lesson-aside">
-            <section>
-              <span className="learning-eyebrow">{t("Коротко о главном")}</span>
-              <p>{t("Кинематика описывает движение тел без учёта причин, которые вызывают это движение.")}</p>
-              <button className="learning-text-link" onClick={() => setShowTheoryModal(true)}>{t("Читать конспект")}{' '}<ArrowUpRight aria-hidden="true"/></button>
-            </section>
-            <section>
-              <h2>{t("На полях")}</h2>
-              <p className="learning-small">{t("Ключевые формулы")}</p>
-              <div className="learning-formulas"><p>v = v₀ + a · t</p><p>S = v₀ · t + ½ a · t²</p><p>v² − v₀² = 2 · a · S</p></div>
-            </section>
-          </aside>
         </div>}
         </div>
       </div>
 
       {openResource && viewedResource && <StudyResourceViewer key={viewedResource.id} resource={viewedResource} initialIndex={openResource.index} onClose={closeResource}/>}
 
-      {showTheoryModal && createPortal(
-        <div className="learning-theory-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setShowTheoryModal(false); }}>
-          <div ref={theoryRef} role="dialog" aria-modal="true" aria-labelledby="study-theory-title" className="learning-theory">
-            <header><span className="learning-eyebrow">{t("TerenPhys / Конспект")}</span><button onClick={() => setShowTheoryModal(false)} aria-label={t("Закрыть конспект")}><X aria-hidden="true"/></button></header>
-            <h2 id="study-theory-title">{t("Кинематика.")}</h2>
-            <section><h3>{t("Основные понятия")}</h3><p>{t("Материальная точка — тело, размерами которого можно пренебречь в условиях данной задачи. Траектория — линия, вдоль которой движется тело.")}</p></section>
-            <section><h3>{t("Равномерное движение")}</h3><p>{t("Скорость постоянна: v = const. Путь: s = v · t.")}</p></section>
-            <section><h3>{t("Равноускоренное движение")}</h3><p>{t("Ускорение постоянно: a = const. Скорость: v(t) = v₀ + at. Перемещение: s = v₀t + at²/2.")}</p></section>
-            <section><h3>{t("Движение по окружности")}</h3><p>{t("Центростремительное ускорение: a = v² / R = ω² · R. Период обращения: T = 2π / ω = 2πR / v.")}</p></section>
-            <button className="learning-text-link" onClick={() => setShowTheoryModal(false)}>{t("Вернуться к заданиям")}{' '}<ArrowRight aria-hidden="true"/></button>
-          </div>
-        </div>, document.body,
-      )}
     </main>
   );
 };

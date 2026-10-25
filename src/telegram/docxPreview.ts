@@ -1,5 +1,5 @@
 import createDOMPurify from 'dompurify';
-import { defaultOptions, renderAsync, type HElement } from 'docx-preview';
+import { defaultOptions, parseAsync, renderDocument, type HElement, type Options } from 'docx-preview';
 import { assertDocxBudget } from './preview.ts';
 
 function safeCss(value: string) {
@@ -54,15 +54,39 @@ export function cleanDocumentHtml(body: string, style: string, windowContext = w
     + '</style></head><body>' + content + '</body></html>';
 }
 
+type WordNode = { type?: string; children?: WordNode[] };
+
+function normalizeEmptyMath(root: WordNode | undefined) {
+  if (!root) return;
+  const pending = [root];
+  // A standalone integral/sum in old Word documents may omit its operand.
+  // docx-preview dereferences that missing base. An empty base preserves the
+  // visible operator and its limits without changing the original DOCX bytes.
+  while (pending.length) {
+    const node = pending.pop()!;
+    if ((node.type === 'mmlNary' || node.type === 'mmlPreSubSuper') && !node.children?.some(child => child.type === 'mmlBase')) {
+      (node.children ??= []).push({ type:'mmlBase',children:[] });
+    }
+    if (node.children) pending.push(...node.children);
+  }
+}
+
 export async function renderDocxPreview(bytes: ArrayBuffer, signal: AbortSignal) {
   assertDocxBudget(bytes);
   signal.throwIfAborted();
   const body = document.createElement('div'), styles = document.createElement('div');
-  await renderAsync(bytes, body, styles, {
+  const options: Partial<Options> = {
     useBase64URL: true, ignoreFonts: true, renderAltChunks: false,
     renderComments: false, experimental: false, ignoreLastRenderedPageBreak: false,
     h: previewNode,
-  });
+  };
+  const parsed = await parseAsync(bytes, options);
+  for (const part of parsed.parts as { body?: WordNode; rootElement?: WordNode; notes?: WordNode[] }[]) {
+    normalizeEmptyMath(part.body); normalizeEmptyMath(part.rootElement);
+    for (const note of part.notes || []) normalizeEmptyMath(note);
+  }
+  signal.throwIfAborted();
+  for (const node of await renderDocument(parsed, options)) (node.nodeName === 'STYLE' ? styles : body).appendChild(node);
   signal.throwIfAborted();
   if (body.innerHTML.length > 8 * 1024 * 1024) throw new Error('Preview too large');
   return cleanDocumentHtml(body.innerHTML, [...styles.querySelectorAll('style')].map(element => element.textContent).join('\n'));

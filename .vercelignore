@@ -1,0 +1,13 @@
+.git
+.firebase
+.codex
+.agents
+.aws
+.env*
+node_modules
+build
+model-source
+scripts/model-tools
+coverage
+*.log
+supabase/.temp

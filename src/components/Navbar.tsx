@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { LogOut } from 'lucide-react';
 import { Logo } from './Logo.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { LanguageSwitch } from './LanguageSwitch.tsx';
+import '../styles/navigation.css';
 
 export type NavTab = 'home' | 'profile' | 'study' | 'posts' | 'forum';
 
@@ -11,6 +13,13 @@ interface NavbarProps {
   onTabChange: (tab: NavTab) => void;
   onOpenAuth: (mode: 'login' | 'register') => void;
 }
+
+const NAV_ITEMS: { id: NavTab; label: string }[] = [
+  { id: 'profile', label: 'Профиль' },
+  { id: 'study', label: 'Учёба' },
+  { id: 'posts', label: 'Посты' },
+  { id: 'forum', label: 'Форум' },
+];
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
@@ -21,6 +30,24 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [leaving, setLeaving] = useState(false);
   const [logoutError, setLogoutError] = useState('');
   const { t } = useLanguage();
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const style = document.documentElement.style;
+    const previousHeight = style.getPropertyValue('--site-header-height');
+    const measure = () => style.setProperty('--site-header-height', `${Math.ceil(header.getBoundingClientRect().height) || 80}px`);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(header);
+    if (!observer) window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+      if (previousHeight) style.setProperty('--site-header-height', previousHeight);
+      else style.removeProperty('--site-header-height');
+    };
+  }, []);
   const leave = async () => {
     if (leaving) return;
     setLeaving(true); setLogoutError('');
@@ -29,27 +56,22 @@ export const Navbar: React.FC<NavbarProps> = ({
     finally { setLeaving(false); }
   };
 
-  const navItems: { id: NavTab; label: string }[] = [
-    { id: 'profile', label: 'Профиль' },
-    { id: 'study', label: 'Учёба' },
-    { id: 'posts', label: 'Посты' },
-    { id: 'forum', label: 'Форум' },
-  ];
-
   return (
-    <header className="site-header sticky top-0 z-50 border-b border-white/10 bg-slate-950/80 text-slate-100 shadow-[0_12px_40px_#02061735] backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 min-h-20 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+    <header ref={headerRef} className="site-header sticky top-0 z-50 border-b border-white/10 text-slate-100">
+      <div className="site-header-inner max-w-7xl mx-auto px-4 sm:px-6 min-h-20 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
         {/* Left: Brand Logo that opens Home */}
         <Logo onClick={() => onTabChange('home')} />
 
         {/* Center: Main Navigation */}
-        <nav className="order-3 flex w-full items-center justify-center gap-5 text-sm md:order-2 md:w-auto md:gap-7 md:text-[15px]">
-          {navItems.map((item) => {
+        <nav className="site-nav order-3 flex w-full items-center justify-center gap-5 text-sm md:order-2 md:w-auto md:gap-7 md:text-[15px]">
+          {NAV_ITEMS.map((item) => {
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
                 onClick={() => onTabChange(item.id)}
+                aria-current={isActive ? 'page' : undefined}
+                data-einstein={'navigate-' + item.id}
                 className={`relative py-2 transition-colors cursor-pointer font-normal ${
                   isActive
                     ? 'text-sky-200 font-medium'
@@ -69,15 +91,16 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="site-header-tools order-2 flex items-center gap-4 text-[15px] md:order-3">
           <LanguageSwitch />
           {user || authenticatedAccount ? (
-            <div className="flex items-center space-x-4">
+            <div className="site-header-account flex items-center gap-4">
               <button
                 onClick={() => onTabChange('profile')}
-                className={`flex items-center gap-2.5 py-1.5 px-3 rounded-full border transition-all cursor-pointer ${
+                className={`site-profile-button flex items-center gap-2.5 py-1.5 px-3 rounded-full border transition-all cursor-pointer ${
                   activeTab === 'profile'
                     ? 'border-sky-300/45 bg-sky-400/10 text-sky-200'
                     : 'border-white/15 hover:border-white/30 text-slate-200 hover:bg-white/5'
                 }`}
                 title={t("Перейти в личный кабинет")}
+                aria-label={t("Перейти в личный кабинет")}
               >
                 {user?.avatarUrl ? (
                   <img
@@ -98,9 +121,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={leave}
                 disabled={leaving}
-                className="text-slate-400 hover:text-rose-300 p-1.5 rounded-full hover:bg-white/5 transition-colors cursor-pointer"
+                className="site-signout-button text-slate-400 hover:text-rose-300 p-1.5 rounded-full hover:bg-white/5 transition-colors cursor-pointer"
                 title={t("Выйти из аккаунта")}
-              >{leaving ? t("Подождите…") : t("Выйти")}</button>
+                aria-label={leaving ? t("Подождите…") : t("Выйти из аккаунта")}
+              ><LogOut className="site-signout-icon" aria-hidden="true"/><span>{leaving ? t("Подождите…") : t("Выйти")}</span></button>
             </div>
           ) : isLoading ? <span role="status">{t("Проверяем…")}</span> : (
             <div className="flex items-center gap-4">

@@ -117,7 +117,7 @@ function isolatedComponents(): Promise<Record<string, any>> {
         export { setFixtureAuth } from './src/context/AuthContext.tsx';
       `, resolveDir: fileURLToPath(new URL('..', import.meta.url)), sourcefile: 'language-fixture.ts' },
       bundle: true, write: false, platform: 'node', format: 'cjs',
-      external: ['react', 'react-dom/*'], loader: { '.css': 'empty' },
+      external: ['react', 'react-dom/*', 'pdfjs-dist', 'pdfjs-dist/*'], loader: { '.css': 'empty' },
       plugins: [{ name: 'isolated-language-render', setup(builder) {
         builder.onResolve({ filter: /^react-dom$/ }, () => ({ path: 'portals', namespace: 'fixture' }));
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const createPortal = children => children;', loader: 'js' }));
@@ -151,9 +151,49 @@ test('actual navigation and pages render in Russian and Kazakh, including grades
       for (const grade of SCHOOL_GRADES) assert.ok(markup.includes('aria-label="' + classLabel(language, grade) + '"'), page + ': ' + grade);
     }
     const home = render('HomePage');
-    assert.ok(home.includes(translate(language, 'Физика — это не просто формулы.')));
+    const { JSDOM } = createRequire(import.meta.url)('jsdom');
+    const homeDom = new JSDOM(home);
+    try {
+      assert.ok(homeDom.window.document.querySelector('.home-copy')!.textContent!.includes(translate(language, 'Физика — это не просто формулы.')));
+      assert.equal(homeDom.window.document.querySelector('h1')!.hasAttribute('data-cursor-avoid'), false);
+      const words = homeDom.window.document.querySelectorAll('.home-word[data-cursor-avoid]');
+      assert.ok(words.length > 10);
+      for (const word of words) assert.equal(word.textContent!.trim().split(/\s+/).length, 1);
+    } finally { homeDom.window.close(); }
     assert.ok(render('ForumPage').includes(translate(language, 'Поиск обсуждений')));
     assert.ok(render('ProfilePage').includes(translate(language, 'Войти по почте')));
+  }
+});
+
+test('quarter and section badges expose translated availability before opening their materials', async () => {
+  const components = await isolatedComponents();
+  const { JSDOM } = createRequire(import.meta.url)('jsdom');
+  for (const language of ['ru', 'kk'] as const) {
+    const render = (name: string, props: object) => new JSDOM(renderToStaticMarkup(React.createElement(components.LanguageProvider,
+      { initialLanguage: language }, React.createElement(components[name], props))));
+    const quarters = render('StudyQuarterList', { grade: 8, onSelect: () => {} });
+    const sections = render('StudySectionList', { sections: STUDY_PROGRAMME[8][1], onSelect: () => {} });
+    try {
+      const check = (document: Document, descriptionId: string, types: string[]) => {
+        const button = document.querySelector(`[aria-describedby="${descriptionId}"]`)!;
+        const description = document.getElementById(descriptionId)!;
+        assert.ok(button.contains(description));
+        assert.deepEqual([...description.querySelectorAll('[data-material]')].map(element => element.getAttribute('data-material')), types);
+        for (const type of types) {
+          const expected = translate(language, type === 'notes' ? 'Есть конспекты' : 'Есть пробники');
+          const icon = description.querySelector(`[data-material="${type}"]`)!;
+          assert.equal(icon.getAttribute('title'), expected);
+          assert.equal(icon.textContent, expected);
+        }
+        if (!types.length) assert.equal(description.textContent, translate(language, 'Материалы пока не добавлены'));
+      };
+      check(quarters.window.document, 'study-quarter-materials-8-1', ['notes', 'trials']);
+      for (const quarter of [2,3,4]) check(quarters.window.document, `study-quarter-materials-8-${quarter}`, []);
+      check(sections.window.document, 'study-section-materials-8.1A', ['notes', 'trials']);
+      check(sections.window.document, 'study-section-materials-8.1B', ['trials']);
+      assert.equal(sections.window.document.querySelector('.learning-material-legend'), null);
+      assert.equal(quarters.window.document.querySelector('.learning-material-legend'), null);
+    } finally { quarters.window.close(); sections.window.close(); }
   }
 });
 

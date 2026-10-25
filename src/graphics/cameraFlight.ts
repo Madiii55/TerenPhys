@@ -54,11 +54,10 @@ export class CameraFlight {
 
     const movingDuration = this.duration - this.brakingDuration;
     const t = movingDuration <= 0 ? 1 : Math.max(0, Math.min(1, (age - this.brakingDuration) / movingDuration));
-    // Explicit ease-in-out cubic: velocity rises to one central peak, then
-    // falls symmetrically to zero. Logarithmic distance keeps the huge journey
-    // visually balanced in both directions rather than fast only at one end.
-    const ease = t < 0.5 ? 4 * t ** 3 : 1 - 4 * (1 - t) ** 3;
-    const easeDerivative = 12 * (t < 0.5 ? t * t : (1 - t) * (1 - t));
+    // Quintic easing keeps both velocity and acceleration continuous, including
+    // the centre of the flight. Log distance spans the astronomical scales.
+    const ease = t * t * t * (t * (t * 6 - 15) + 10);
+    const easeDerivative = 30 * t * t * (1 - t) * (1 - t);
     for (const key of properties) {
       const brakedStart = this.start[key] + this.velocity[key] * this.brakingDuration * 0.5;
       const difference = this.end[key] - brakedStart;

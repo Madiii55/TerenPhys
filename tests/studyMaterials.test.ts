@@ -25,6 +25,7 @@ test('8.1A has three language-specific note pages and a trial without invented a
     assert.equal(quarterMaterial(8, 1, language)!.title, 'Пробный СОЧ');
     for (const resource of [a.notes!, a.trial!, b.trial!, quarterMaterial(8, 1, language)!]) {
       for (const file of resource.files) {
+        if (!file.url.startsWith('/study/')) continue; // Audited channel resources are checked in telegramStudy.test.ts.
         assert.equal(existsSync(asset(file.url)), true, file.url);
         if (file.format === 'docx') assert.doesNotThrow(() => assertDocxBudget(bytes(file.url)));
       }
@@ -32,13 +33,17 @@ test('8.1A has three language-specific note pages and a trial without invented a
   }
 });
 
-test('files never leak into other grades, quarters or sections', () => {
+test('existing 8.1 files never leak into other grades, quarters or sections', () => {
   for (const grade of [7,8,9,10,11] as const) for (const quarter of [1,2,3,4] as const) {
     for (const section of STUDY_PROGRAMME[grade][quarter]) {
       const materials = sectionMaterials(grade, section.id, 'ru');
-      assert.equal(Boolean(materials.trial), grade === 8 && quarter === 1);
+      for (const resource of Object.values(materials)) for (const file of resource.files) {
+        if (file.url.startsWith('/study/8/1/')) assert.equal(section.id.startsWith('8.1'), true);
+      }
     }
-    assert.equal(Boolean(quarterMaterial(grade, quarter, 'kk')), grade === 8 && quarter === 1);
+    for (const file of quarterMaterial(grade, quarter, 'kk')?.files || []) {
+      if (file.url.startsWith('/study/8/1/')) assert.equal(grade === 8 && quarter === 1, true);
+    }
   }
   assert.deepEqual(sectionMaterials(7, '8.1A', 'ru'), {});
   assert.equal(quarterMaterial(8, null, 'ru'), undefined);
@@ -67,6 +72,19 @@ async function compiled(source: string, mockDocx = false) {
   const result = await build({ stdin: { contents: source, resolveDir: fileURLToPath(new URL('..', import.meta.url)), sourcefile: 'study-test.tsx', loader: 'tsx' },
     bundle: true, write: false, platform: 'node', format: 'cjs', external: ['react','react-dom','react-dom/*','docx-preview','dompurify'], loader: { '.css':'empty' },
     plugins: [{ name: 'study-preview-test', setup(builder) {
+      builder.onResolve({ filter: /^pdfjs-dist\/legacy\/build\/pdf.worker.mjs\?url$/ }, () => ({ path: 'worker', namespace: 'pdf-worker-test' }));
+      builder.onLoad({ filter: /.*/, namespace: 'pdf-worker-test' }, () => ({ contents: 'export default "/test-pdf-worker.mjs";', loader: 'js' }));
+      builder.onResolve({ filter: /^pdfjs-dist(?:\/legacy\/build\/pdf.mjs)?$/ }, () => ({ path: 'pdf', namespace: 'pdf-render-test' }));
+      builder.onLoad({ filter: /.*/, namespace: 'pdf-render-test' }, () => ({ contents: `
+        export const calls=[]; export const GlobalWorkerOptions={};
+        export function getDocument(options){ calls.push(options); return {destroy:async()=>{}, promise:Promise.resolve({
+          numPages:3, getPage:async(number)=>({
+            getViewport:({scale})=>({width:600*scale,height:800*scale}),
+            render:({canvas})=>{ canvas.dataset.page=String(number); return {promise:Promise.resolve(),cancel(){}} },
+            getTextContent:async()=>({items:[{str:'PDF text page '+number}]})
+          })
+        })} }
+      `, loader: 'js' }));
       if (mockDocx) builder.onLoad({ filter: /[\\/]docxPreview\.ts$/ }, () => ({ contents: 'export const renderDocxPreview = async () => "<html><body>Word preview</body></html>";', loader: 'ts' }));
     } }],
   });
@@ -86,6 +104,8 @@ function environment() {
   }
   previous.set('IS_REACT_ACT_ENVIRONMENT', Object.getOwnPropertyDescriptor(globalThis,'IS_REACT_ACT_ENVIRONMENT'));
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  previous.set('ResizeObserver', Object.getOwnPropertyDescriptor(globalThis,'ResizeObserver'));
+  (globalThis as any).ResizeObserver = class { observe() {} disconnect() {} };
   return { dom, restore() { dom.window.close(); for (const [key,value] of previous) { if (value) Object.defineProperty(globalThis,key,value); else delete (globalThis as any)[key]; } } };
 }
 
@@ -95,7 +115,7 @@ test('all eight actual DOCX resources render their text, tables and diagrams wit
     const { renderDocxPreview } = await compiled("export {renderDocxPreview} from './src/telegram/docxPreview.ts';");
     for (const language of ['ru','kk'] as const) {
       const a = sectionMaterials(8,'8.1A',language), b = sectionMaterials(8,'8.1B',language);
-      for (const resource of [a.trial!, b.trial!, quarterMaterial(8,1,language)!]) for (const file of resource.files) {
+      for (const resource of [a.trial!, b.trial!, quarterMaterial(8,1,language)!]) for (const file of resource.files.filter(file => file.url.startsWith('/study/'))) {
         const html = await renderDocxPreview(bytes(file.url),new AbortController().signal);
         assert.match(html, /Content-Security-Policy/);
         assert.doesNotMatch(html, /<script\b/);
@@ -116,7 +136,7 @@ test('all eight actual DOCX resources render their text, tables and diagrams wit
   } finally { env.restore(); }
 });
 
-test('actual Study navigation exposes the quarter trial and exactly two panels, previews notes and separate answers, restores focus and changes files with language', async () => {
+test('Study opens the complete inline lesson automatically, keeps the trial below it, and preserves originals, language and modal answers', async () => {
   const env = environment(), originalFetch = globalThis.fetch;
   let root: any;
   try {
@@ -126,7 +146,7 @@ test('actual Study navigation exposes the quarter trial and exactly two panels, 
       import React from 'react'; import {useLanguage} from './src/i18n/LanguageContext.tsx';
       export {StudyPage} from './src/components/StudyPage.tsx';
       export {LanguageProvider} from './src/i18n/LanguageContext.tsx';
-      export function Switch(){ const {setLanguage}=useLanguage(); return <button onClick={()=>setLanguage('kk')}>switch</button> }
+      export function Switch(){ const {setLanguage,language}=useLanguage(); return <button onClick={()=>setLanguage(language==='ru'?'kk':'ru')}>switch</button> }
     `, true);
     root = require('react-dom/client').createRoot(document.getElementById('root'));
     await act(async()=>root.render(React.createElement(LanguageProvider,{initialLanguage:'ru'},React.createElement(StudyPage),React.createElement(Switch))));
@@ -140,27 +160,136 @@ test('actual Study navigation exposes the quarter trial and exactly two panels, 
     assert.equal(document.querySelector('a[download]')!.getAttribute('href'),'/study/8/1/quarter/soch-ru.docx');
     await click(document.querySelector('button[aria-label="Закрыть просмотр"]')!);
     await click(document.querySelector('button[aria-label="8.1A — Тепловая физика"]')!);
-    assert.deepEqual([...document.querySelectorAll('.learning-resource h2')].map(node=>node.textContent), ['Конспект','Пробный СОР']);
-    assert.equal(button('Ответы'),undefined);
-    await click(button('Читать конспект'));
-    assert.equal(document.querySelector('img')!.getAttribute('src'),'/study/8/1/a/notes-ru-1.jpg');
-    await click(document.querySelector('button[aria-label="Следующий файл"]')!);
-    assert.equal(document.querySelector('img')!.getAttribute('src'),'/study/8/1/a/notes-ru-2.jpg');
-    await click(document.querySelector('button[aria-label="Следующий файл"]')!);
-    assert.equal(document.querySelector('img')!.getAttribute('src'),'/study/8/1/a/notes-ru-3.jpg');
-    await act(async()=>document.dispatchEvent(new env.dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
-    assert.equal(document.querySelector('[role="dialog"]'),null); assert.equal(document.body.style.overflow,'');
-    assert.equal(document.activeElement,button('Читать конспект'));
+    const notes = document.querySelector<HTMLElement>('article#study-notes')!;
+    assert.ok(notes);
+    assert.equal(notes.lang, 'ru');
+    assert.equal(notes.querySelectorAll('.study-lesson-prose h3').length, 6);
+    assert.match(notes.textContent!, /Броуновское движение/);
+    assert.equal(notes.querySelectorAll('table').length, 2);
+    assert.equal(notes.querySelector('iframe,canvas,img'), null, 'a scan is not used as the reading edition');
+    assert.equal(document.querySelector('[role="dialog"]'), null);
+    assert.equal(button('Читать конспект'), undefined);
+    assert.equal(button('Ответы'), undefined);
+    assert.deepEqual([...notes.querySelectorAll('a[download]')].map(link => link.getAttribute('href')),
+      [1,2,3].map(page => `/study/8/1/a/notes-ru-${page}.jpg`));
+    const trialButton = button('Перейти к пробному СОРу');
+    assert.ok(notes.compareDocumentPosition(trialButton) & env.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+    const hash = window.location.hash;
+    const outlineLink = notes.querySelector<HTMLAnchorElement>('.study-lesson-outline a')!;
+    await click(outlineLink);
+    assert.equal(document.activeElement?.id, outlineLink.hash.slice(1));
+    assert.equal(window.location.hash, hash, 'outline links do not create a route or history entry');
+    await click(document.querySelector('.study-lesson-trial-jump')!);
+    assert.equal(document.activeElement?.id, 'study-trial-heading');
+    assert.equal(window.location.hash, hash);
+    await click(button('switch'));
+    assert.equal(document.querySelector<HTMLElement>('#study-notes')!.lang, 'kk');
+    assert.match(document.querySelector('.study-lesson-prose')!.textContent!, /Броундық қозғалыс/);
+    assert.doesNotMatch(document.querySelector('.study-lesson-prose')!.textContent!, /Броуновское движение/);
+    assert.equal(document.querySelector('#study-notes a[download]')!.getAttribute('href'), '/study/8/1/a/notes-kk-1.jpg');
+    await click(button('switch'));
+    await click(button('Перейти к пробному СОРу'));
+    assert.equal(document.querySelector('a.attachment-download')!.getAttribute('href'), '/study/8/1/a/sau-ru.docx');
+    await click(document.querySelector('button[aria-label="Закрыть просмотр"]')!);
+    assert.equal(document.activeElement, button('Перейти к пробному СОРу'));
+    assert.equal(document.body.style.overflow, '');
+    assert.ok(fetched.every(url => !url.includes('notes-')), 'reading a lesson never downloads its original scans');
     await click(button('Все разделы'));
     await click(document.querySelector('button[aria-label="8.1B — Количество теплоты"]')!);
-    assert.match(document.querySelector('.learning-resources')!.textContent!,/Конспект пока не добавлен/);
+    assert.match(document.querySelector('.study-lesson-empty')!.textContent!,/Конспект пока не добавлен/);
+    assert.equal(document.querySelector('#study-notes'),null);
     await click(button('Ответы'));
-    assert.equal(document.querySelector('a[download]')!.getAttribute('href'),'/study/8/1/b/answers-ru.docx');
+    assert.equal(document.querySelector('a.attachment-download')!.getAttribute('href'),'/study/8/1/b/answers-ru.docx');
     assert.equal(document.querySelector('iframe')!.getAttribute('sandbox'),'allow-same-origin');
     await click(button('switch'));
-    assert.equal(document.querySelector('a[download]')!.getAttribute('href'),'/study/8/1/b/answers-kk.docx');
+    assert.equal(document.querySelector('a.attachment-download')!.getAttribute('href'),'/study/8/1/b/answers-kk.docx');
     assert.match(document.querySelector('#study-resource-title')!.textContent!,/Сынама БЖБ/);
     assert.ok(fetched.includes('/study/8/1/quarter/soch-ru.docx'));
     assert.ok(fetched.includes('/study/8/1/b/answers-kk.docx'));
   } finally { if(root) await act(async()=>root.unmount()); globalThis.fetch = originalFetch; env.restore(); }
+});
+
+test('Word preview survives equivalent resource objects and fetches again only for a different file', async () => {
+  const env = environment(), originalFetch = globalThis.fetch;
+  let root: any;
+  try {
+    const fetched: string[] = [];
+    globalThis.fetch = (async (url: any) => { fetched.push(String(url)); return new Response(new Uint8Array([1,2,3])); }) as typeof fetch;
+    const { Viewer } = await compiled("export {default as Viewer} from './src/components/StudyResourceViewer.tsx';", true);
+    root = require('react-dom/client').createRoot(document.getElementById('root'));
+    const onClose = () => {};
+    const render = (language: 'ru' | 'kk') => act(async () => {
+      root.render(React.createElement(Viewer, { resource: sectionMaterials(8,'8.1B',language).trial, onClose }));
+      await new Promise(resolve => setTimeout(resolve, 10));
+    });
+    await render('ru');
+    const frame = document.querySelector('iframe');
+    assert.ok(frame);
+    await render('ru');
+    assert.deepEqual(fetched, ['/study/8/1/b/sau-ru.docx']);
+    assert.equal(document.querySelector('iframe'), frame);
+    await render('kk');
+    assert.deepEqual(fetched, ['/study/8/1/b/sau-ru.docx', '/study/8/1/b/sau-kk.docx']);
+    assert.notEqual(document.querySelector('iframe'), frame);
+  } finally { if (root) await act(async () => root.unmount()); globalThis.fetch = originalFetch; env.restore(); }
+});
+
+test('study PDF keeps English explicit, bounds loading and supports pages/zoom; unavailable sources have an honest Telegram fallback', async () => {
+  const env = environment(), originalFetch = globalThis.fetch;
+  let root: any;
+  try {
+    const fetched: string[] = [];
+    globalThis.fetch = (async (url: any) => { fetched.push(String(url)); return new Response(new Uint8Array([1,2,3])); }) as typeof fetch;
+    const { Viewer, calls } = await compiled("export {default as Viewer} from './src/components/StudyResourceViewer.tsx'; export {calls} from 'pdfjs-dist';");
+    root = require('react-dom/client').createRoot(document.getElementById('root'));
+    const onClose = () => {};
+    const render = (resource: any) => act(async()=>{ root.render(React.createElement(Viewer,{key:resource.id,resource,onClose})); await new Promise(resolve=>setTimeout(resolve,30)); });
+    const notes = sectionMaterials(11,'11.1B','ru').notes!;
+    await render(notes);
+    assert.match(document.querySelector('#study-resource-title')!.textContent!, /English/);
+    await act(async()=>{ await new Promise(resolve=>setTimeout(resolve,30)); });
+    assert.equal(document.querySelector('canvas')!.getAttribute('data-page'), '1');
+    assert.equal(document.querySelector('canvas')!.hidden, false);
+    assert.equal(calls[0].enableXfa, false);
+    assert.equal(calls[0].useWorkerFetch, false);
+    await act(async()=>{ (document.querySelector('button[aria-label="Следующая страница"]') as HTMLButtonElement).click(); });
+    assert.equal(document.querySelector('canvas')!.getAttribute('data-page'), '2');
+    await act(async()=>{ (document.querySelector('button[aria-label="Увеличить"]') as HTMLButtonElement).click(); });
+    assert.match(document.querySelector('.study-pdf-toolbar')!.textContent!,/125%/);
+    assert.match(document.querySelector('a[download]')!.getAttribute('href')!, /\?download=11\.1B-EN-notes-tg-401.pdf$/);
+    // Keep coverage for future source-only entries, independently of the restored catalogue.
+    await render({ id:'unavailable',code:'9.2',title:'Пробный СОР',files:[{
+      url:'https://t.me/nisphysicshub/154',format:'telegram',language:'und',
+      downloadName:'9.2-UND-SOR-tg-154.docx',label:'Задания',sourceFormat:'docx',
+    }] });
+    assert.equal(document.querySelector('iframe'), null);
+    assert.equal(document.querySelector('a[download]'), null);
+    assert.match(document.querySelector('#study-resource-title')!.textContent!, /Язык не указан/);
+    const link = document.querySelector('.attachment-state a')!;
+    assert.equal(link.getAttribute('href'), 'https://t.me/nisphysicshub/154');
+    assert.equal(link.getAttribute('rel'), 'noopener noreferrer');
+    assert.equal(link.getAttribute('target'), '_blank');
+    assert.deepEqual(fetched, [notes.files[0].url]);
+  } finally { if (root) await act(async()=>root.unmount()); globalThis.fetch = originalFetch; env.restore(); }
+});
+
+test('a long quarter collection has an accessible file selector and previews the chosen restored document without navigating away', async () => {
+  const env = environment(), originalFetch = globalThis.fetch; let root: any;
+  try {
+    const fetched: string[] = [];
+    globalThis.fetch = (async (url: any) => { fetched.push(String(url)); return new Response(new Uint8Array([1,2,3])); }) as typeof fetch;
+    const { Viewer } = await compiled("export {default as Viewer} from './src/components/StudyResourceViewer.tsx';");
+    const resource = quarterMaterial(8,1,'kk')!;
+    const onClose = () => {};
+    root = require('react-dom/client').createRoot(document.getElementById('root'));
+    await act(async()=>root.render(React.createElement(Viewer,{resource,onClose})));
+    const select = document.querySelector<HTMLSelectElement>('select[aria-label="Выбрать файл"]')!;
+    assert.equal(select.options.length, resource.files.length);
+    await act(async()=> { select.value = String(resource.files.length - 1); select.dispatchEvent(new env.dom.window.Event('change',{bubbles:true})); await new Promise(resolve=>setTimeout(resolve,30)); });
+    assert.ok(document.querySelector('canvas'));
+    assert.ok(document.querySelector('a[download]')!.getAttribute('href')!.startsWith(resource.files.at(-1)!.url));
+    assert.ok(fetched.includes(resource.files.at(-1)!.url));
+    assert.equal((document.querySelector('button[aria-label="Следующий файл"]')! as HTMLButtonElement).disabled, true);
+    assert.equal(document.activeElement?.getAttribute('aria-label'), 'Закрыть просмотр');
+  } finally { if (root) await act(async()=>root.unmount()); globalThis.fetch = originalFetch; env.restore(); }
 });

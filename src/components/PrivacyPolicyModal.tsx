@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
+import { useDialogFocus } from '../utils/useDialogFocus.ts';
+import '../styles/auth-dialogs.css';
 
 interface PrivacyPolicyModalProps {
   isOpen: boolean;
@@ -12,39 +15,37 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({
   onClose,
 }) => {
   const { t } = useLanguage();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useDialogFocus(dialogRef, isOpen, onClose);
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative border border-gray-100 max-h-[85vh] overflow-y-auto">
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 text-gray-400 hover:text-gray-700 p-1.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
-          title={t("Закрыть")}
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
-          <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#0284c7] flex items-center justify-center">
-            <ShieldCheck className="w-6 h-6" />
+  const content = (
+    <div className="privacy-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="privacy-dialog">
+        <div className="privacy-dialog-heading">
+          <div className="privacy-dialog-symbol" aria-hidden="true">
+            <ShieldCheck />
           </div>
           <div>
-            <h3 className="text-xl font-medium text-gray-900">{t("Политика конфиденциальности")}</h3>
-            <p className="text-xs text-gray-500 font-light">{t("TerenPhys • Условия и защита данных")}</p>
+            <h2 id={titleId}>{t("Политика конфиденциальности")}</h2>
+            <p>{t("TerenPhys • Условия и защита данных")}</p>
           </div>
+          <button type="button" onClick={onClose} className="privacy-dialog-close" aria-label={t("Закрыть")} data-dialog-initial-focus>
+            <X aria-hidden="true" />
+          </button>
         </div>
 
-        <div className="space-y-4 text-xs sm:text-sm text-gray-600 font-light leading-relaxed">
-          <section className="space-y-1.5">
-            <h4 className="font-medium text-gray-900 text-sm">{t("1. Общие положения")}</h4>
+        <div className="privacy-dialog-content">
+          <section>
+            <h3>{t("1. Общие положения")}</h3>
             <p>{t("Настоящая Политика конфиденциальности определяет порядок обработки и защиты персональных данных пользователей образовательной платформы TerenPhys. Регистрируясь или выполняя вход через Email или Google, пользователь выражает полное и безоговорочное согласие с условиями настоящей политики.")}</p>
           </section>
 
-          <section className="space-y-1.5">
-            <h4 className="font-medium text-gray-900 text-sm">{t("2. Собираемые данные")}</h4>
+          <section>
+            <h3>{t("2. Собираемые данные")}</h3>
             <p>{t("Для обеспечения функционала платформы собираются следующие данные:")}</p>
-            <ul className="list-disc pl-5 space-y-1 text-xs text-gray-600">
+            <ul>
               <li>{t("Никнейм и описание профиля;")}</li>
               <li>{t("Адрес электронной почты (Email);")}</li>
               <li>{t("Аватар профиля (загруженное изображение);")}</li>
@@ -52,25 +53,29 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({
             </ul>
           </section>
 
-          <section className="space-y-1.5">
-            <h4 className="font-medium text-gray-900 text-sm">{t("3. Хранение и безопасность данных")}</h4>
+          <section>
+            <h3>{t("3. Хранение и безопасность данных")}</h3>
             <p>{t("Вход и пароли обрабатывает Supabase Auth. Никнейм и описание сохраняются в базе Supabase, фотография — в Supabase Storage. Почта не включается в публичную ленту, пароль не хранится в таблице профилей. Аватар может отображаться в публичных постах; изображение доступно по ссылке.")}</p>
           </section>
 
-          <section className="space-y-1.5">
-            <h4 className="font-medium text-gray-900 text-sm">{t("4. Управление профилем")}</h4>
+          <section>
+            <h3>{t("4. Управление профилем")}</h3>
             <p>{t("Пользователь может изменить никнейм, описание и аватар в личном кабинете, восстановить пароль по почте и запросить удаление учётной записи.")}</p>
+          </section>
+          <section>
+            <h3>{t("5. Помощник Эйнштейн")}</h3>
+            <p>{t("При отправке вопроса сервису Gemini передаются текст беседы, текущая учебная тема и ограниченный фрагмент открытого нативного конспекта. Почта, профиль и черновики ответов не передаются. Переписка остаётся только в памяти открытой страницы; на сервере TerenPhys сохраняются только счётчики запросов без текста переписки. На бесплатном тарифе Google может использовать вопросы и ответы для улучшения своих продуктов.")}</p>
           </section>
         </div>
 
-        <div className="mt-8 pt-4 border-t border-gray-100 flex justify-end">
+        <div className="privacy-dialog-footer">
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-2.5 rounded-xl bg-[#0284c7] hover:bg-blue-600 text-white text-xs font-medium transition-colors cursor-pointer"
           >{t("Понятно")}</button>
         </div>
       </div>
     </div>
   );
+  return typeof document === 'undefined' ? content : createPortal(content, document.body);
 };

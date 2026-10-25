@@ -31,9 +31,9 @@ const api:ForumApi={
  async liked(id){return likes.has(id);},
  async createTopic(draft,userId){const topic:ForumTopic={...draft,id:crypto.randomUUID(),author_id:userId,author_name:profile.name,author_avatar_path:null,view_count:0,like_count:0,comment_count:0,created_at:new Date().toISOString()};topics=[topic,...topics];notify();return structuredClone(topic);},
  async createComment(topic_id,body,parent_id,author_id){const row:ForumComment={id:crypto.randomUUID(),topic_id,body,parent_id,author_id,author_name:profile.name,author_avatar_path:null,created_at:new Date().toISOString()};comments.push(row);topics.find(t=>t.id===topic_id)!.comment_count++;notify();return structuredClone(row);},
- async setLike(id,userId,liked){const topic=topics.find(t=>t.id===id)!;if(liked&&!likes.has(id)){likes.add(id);topic.like_count++;}if(!liked&&likes.has(id)){likes.delete(id);topic.like_count--;}notify();},
+ async setLike(id,_userId,liked){const topic=topics.find(t=>t.id===id)!;if(liked&&!likes.has(id)){likes.add(id);topic.like_count++;}if(!liked&&likes.has(id)){likes.delete(id);topic.like_count--;}notify();},
  async recordView(id){const topic=topics.find(t=>t.id===id);if(!topic)return null;if(!views.has(id)){views.add(id);topic.view_count++;notify();}return topic.view_count;},
- subscribe(id,cb){listeners.add(cb);return()=>{listeners.delete(cb);};}
+ subscribe(_id,cb){listeners.add(cb);return()=>{listeners.delete(cb);};}
 };
 function Fixture(){
  const [member,setMember]=useState(false),[notice,setNotice]=useState('');

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, CornerDownRight, Eye, Heart, MessageCircle, Plus, Search, Send, X } from 'lucide-react';
 import { useAuth, type UserProfile } from '../context/AuthContext.tsx';
 import { avatarUrl } from '../supabase.ts';
@@ -65,6 +65,7 @@ function TopicForm({ api, user, onOpenAuth, onBack, onCreated, initialGrade, ini
 function TopicDetail({ id,api,user,onOpenAuth,onBack,active }: {id:string;api:ForumApi;user:UserProfile|null;onOpenAuth:OpenAuth;onBack:()=>void;active:boolean}) {
   const { t, gradeLabel, intlLocale } = useLanguage();
   const [topic,setTopic] = useState<ForumTopic|null>(null), [comments,setComments] = useState<ForumComment[]>([]);
+  const commentsById = useMemo(() => new Map(comments.map(comment => [comment.id, comment])), [comments]);
   const [total,setTotal] = useState(0), [limit,setLimit] = useState(40), [loading,setLoading] = useState(true);
   const [error,setError] = useState(''), [writeError,setWriteError] = useState('');
   const [liked,setLiked] = useState(false), [likeBusy,setLikeBusy] = useState(false), [sending,setSending] = useState(false);
@@ -143,7 +144,7 @@ function TopicDetail({ id,api,user,onOpenAuth,onBack,active }: {id:string;api:Fo
         {comments.length<total && <button className="forum-older" onClick={()=>setLimit(n=>n+40)}>{t("Показать более ранние комментарии")}<ChevronLeft/></button>}
         {!comments.length && <p className="forum-no-comments">{t("Ответов пока нет. Можно начать с вашей мысли.")}</p>}
         {comments.map(comment=>{
-          const parent=comment.parent_id ? comments.find(c=>c.id===comment.parent_id) : null;
+          const parent=comment.parent_id ? commentsById.get(comment.parent_id) : undefined;
           return <article className="forum-comment" key={comment.id} id={'comment-'+comment.id}>
             <Avatar name={comment.author_name} path={comment.author_avatar_path}/>
             <div className="forum-comment-main"><div className="forum-comment-heading"><strong>{comment.author_name}</strong><time dateTime={comment.created_at}>{formatForumDate(comment.created_at,intlLocale)}</time></div>
@@ -174,7 +175,12 @@ export const ForumPage: React.FC<ForumPageProps> = ({onOpenAuth,active=true,api=
   const [total,setTotal]=useState(0),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const [selected,setSelected]=useState<string|null>(null),[composing,setComposing]=useState(false),[revision,setRevision]=useState(0);
   const searchInput=useRef<HTMLInputElement>(null), surface=useRef<HTMLElement>(null);
-  useEffect(()=>{const timer=setTimeout(()=>{setFilters(f=>({...f,search:search.trim()}));setPage(0);},300);return()=>clearTimeout(timer);},[search]);
+  useEffect(()=>{
+    const trimmed = search.trim();
+    if (trimmed === filters.search) return;
+    const timer=setTimeout(()=>{setFilters(f=>({...f,search:trimmed}));setPage(0);},300);
+    return()=>clearTimeout(timer);
+  },[search,filters.search]);
   useEffect(()=>{
     if(!active || selected || composing)return;
     let current=true,request=0;

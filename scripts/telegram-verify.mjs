@@ -19,16 +19,18 @@ for (;;) {
   for (const row of rows) {
     assert.ok(!ids.has(row.message_id), 'Duplicate pagination row'); ids.add(row.message_id);
     assert.ok(!JSON.stringify(row).includes('api.telegram.org/file/bot'), 'Unsafe bot URL');
-    firstMedia ||= row.attachments.find(item => item.path)?.path;
+    firstMedia ||= row.attachments.find(item => item.path);
   }
   pages++; total += rows.length; cursor = rows.at(-1);
   if (rows.length < 30) break;
 }
-const expected = process.argv[2] ? Number(process.argv[2]) : 339;
-assert.equal(total, expected);
+if (process.argv[2]) assert.equal(total, Number(process.argv[2]));
+else assert.ok(total > 0, 'Telegram history is empty');
 assert.ok(firstMedia);
-const media = await fetch(base + '/storage/v1/object/public/telegram-media/' + firstMedia, { signal: AbortSignal.timeout(20000) });
-assert.equal(media.status, 200); assert.match(media.headers.get('content-type'), /^image\//);
+const media = await fetch(base + '/storage/v1/object/public/telegram-media/' + firstMedia.path, { signal: AbortSignal.timeout(20000) });
+assert.equal(media.status, 200);
+if (firstMedia.mime) assert.equal(media.headers.get('content-type')?.split(';')[0], firstMedia.mime);
+else if (firstMedia.kind === 'photo') assert.match(media.headers.get('content-type'), /^image\//);
 await media.body.cancel();
 const rpc = await fetch(base + '/rest/v1/rpc/telegram_store_post', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ p_post: {} }) });
 assert.ok([401, 403, 404].includes(rpc.status), 'Visitor can invoke privileged RPC');

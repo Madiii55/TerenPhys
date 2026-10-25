@@ -1,0 +1,93 @@
+.account-modal-backdrop.auth-dialog-backdrop,
+.privacy-dialog-backdrop {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 3vw, 28px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #02050dd6;
+}
+.account-modal.auth-dialog,
+.privacy-dialog {
+  width: 100%;
+  max-width: 480px;
+  min-width: 0;
+  max-height: calc(100svh - clamp(24px, 6vw, 56px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: clamp(22px, 4vw, 36px);
+  border: 1px solid #abc9dc2e;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #101824, #090f19);
+  box-shadow: 0 24px 90px #0008;
+  color: #e9e8e3;
+  scrollbar-width: thin;
+  scrollbar-color: #476078 transparent;
+}
+.auth-dialog .account-modal-top {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  margin-bottom: 28px;
+  align-items: center;
+}
+.auth-dialog .account-modal-top > span { letter-spacing: .06em; font-size: 12px; color: #a9bdca; }
+.auth-dialog .account-modal-top .account-link { min-height: 36px; display: inline-flex; align-items: center; }
+.auth-dialog h2,
+.auth-dialog .account-verification h2 {
+  font-size: clamp(29px, 5vw, 38px);
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  margin: 0 0 28px;
+}
+.auth-dialog .account-field :is(input, textarea) {
+  border-color: #a9c0d42e;
+  background: #060c16b3;
+  border-radius: 5px;
+}
+.auth-dialog .account-field :is(input, textarea):focus-visible { outline-offset: 2px; }
+.auth-dialog .account-field :is(input, textarea):disabled { opacity: .65; }
+.auth-dialog .account-form { margin-top: 24px; gap: 22px; }
+.auth-dialog .account-form .account-button { margin-top: 6px; }
+.auth-dialog .account-button { border-radius: 5px; }
+.auth-dialog .account-google { margin-top: 14px; }
+.auth-dialog .account-google > svg { flex-shrink: 0; }
+.auth-dialog .account-switch { padding-top: 22px; border-top: 1px solid #a9c0d424; }
+.auth-dialog .account-error,
+.auth-dialog .account-notice { border-top: 1px solid #a9c0d424; }
+.privacy-dialog { max-width: 660px; font: 14px/1.75 'Manrope', Arial, sans-serif; }
+.privacy-dialog :is(button, a):focus-visible { outline: 2px solid #a1d4e7; outline-offset: 4px; }
+.privacy-dialog-heading { display: grid; grid-template-columns: 40px minmax(0, 1fr) 36px; gap: 14px; align-items: start; padding-bottom: 26px; border-bottom: 1px solid #a9c0d42e; }
+.privacy-dialog-symbol { display: grid; place-items: center; width: 40px; height: 40px; color: #a1d4e7; border: 1px solid #a1d4e72e; border-radius: 8px; background: #a1d4e70a; }
+.privacy-dialog-symbol svg { width: 22px; height: 22px; stroke-width: 1.4; }
+.privacy-dialog-heading h2 { font: 400 clamp(25px, 4vw, 34px)/1.14 Georgia, 'Times New Roman', serif; letter-spacing: -.025em; margin: 0 0 10px; overflow-wrap: anywhere; }
+.privacy-dialog-heading p { font-size: 11px; line-height: 1.6; color: #91a6b9; }
+.privacy-dialog-close { display: grid; place-items: center; min-width: 36px; min-height: 36px; background: none; border: 0; border-radius: 5px; color: #9bb0bf; cursor: pointer; }
+.privacy-dialog-close:hover { color: #e9eef1; background: #ffffff08; }
+.privacy-dialog-close svg { width: 20px; height: 20px; stroke-width: 1.4; }
+.privacy-dialog-content { display: grid; gap: 26px; padding-top: 28px; color: #b9c4cf; }
+.privacy-dialog-content section { display: grid; gap: 9px; }
+.privacy-dialog-content h3 { margin: 0; font: 500 14px/1.5 'Manrope', Arial, sans-serif; color: #e5e9eb; }
+.privacy-dialog-content p { margin: 0; }
+.privacy-dialog-content ul { margin: 3px 0 0; padding-left: 20px; list-style: disc; }
+.privacy-dialog-content li { padding-left: 3px; }
+.privacy-dialog-footer { display: flex; justify-content: flex-end; padding-top: 24px; margin-top: 28px; border-top: 1px solid #a9c0d42e; }
+.privacy-dialog-footer button { min-height: 44px; padding: 11px 26px; border: 1px solid #b7d9ea3d; border-radius: 5px; background: #bdd5e6; color: #10212e; font-size: 13px; cursor: pointer; }
+.privacy-dialog-footer button:hover { background: #d4e3ec; }
+@media (max-width: 480px) {
+  .auth-dialog .account-modal-top { grid-template-columns: 1fr auto; gap: 10px; }
+  .auth-dialog .account-modal-top > span { grid-column: 1 / -1; }
+  .auth-dialog .account-modal-top > .account-link { justify-self: end; }
+  .auth-dialog .account-google { gap: 9px; padding-inline: 12px; }
+  .privacy-dialog { padding: 22px; font-size: 13px; }
+  .privacy-dialog-heading { grid-template-columns: minmax(0, 1fr) 36px; gap: 12px; }
+  .privacy-dialog-symbol { display: none; }
+  .privacy-dialog-heading h2 { font-size: 27px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .auth-dialog, .privacy-dialog { animation: dialog-arrive 320ms cubic-bezier(.4, 0, .2, 1) both; }
+  @keyframes dialog-arrive { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+}
